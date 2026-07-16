@@ -1,0 +1,27 @@
+{
+  "serverName": "DECAY Master Server",
+  "host": "0.0.0.0",
+  "port": 3000,
+  "publicBaseUrl": "http://52.67.66.140:3000",
+  "tokenTTLSeconds": 60,
+  "heartbeatTTLSeconds": 90,
+  "rateLimit": {
+    "windowSeconds": 60,
+    "maxRequests": 100
+  },
+  "allowedClientBuilds": ["2411"],
+"latestClientBuild": {
+    "version": "1.4.3",
+    "sizeMB": 850,
+    "changelog": [
+      "Corrigido bug de dessincronização ao reconectar",
+      "Novo mapa: Zona Industrial",
+      "Ajustes de balanceamento na arma X"
+    ]
+  },
+  "logLevel": "info",
+  "serverKey": "your-secret-server-key-change-in-production",
+  "jwtSecret": "CHANGE_THIS_TO_A_SECURE_RANDOM_STRING",
+  "jwtExpirySeconds": 604800,
+  "googleClientId": "309430069691-tvg6e9aqbh7h9i1b8ia45svdd6gvttnr.apps.googleusercontent.com"
+}
