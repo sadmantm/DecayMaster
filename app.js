@@ -811,6 +811,8 @@ Comandos disponíveis:
   unban <playerId>             Remove o banimento de um player
   list [all]                   Lista bans ativos (ou todos com "all")
   find <playerId>              Mostra dispositivos/ips conhecidos do player
+  findnick <nick>              Busca players pelo nome (parcial)
+  players [limit] [offset]     Lista todos os players (paginado)
   help                         Mostra esta ajuda
 `);
   };
@@ -844,7 +846,37 @@ Comandos disponíveis:
           }
           break;
         }
+        case "findnick": {
+          const q = parts.slice(1).join(" ");
+          if (!q) { console.log("Uso: findnick <nick>"); break; }
+          const rows = authStore.findPlayersByName(q);
+          if (rows.length === 0) { console.log(`Nenhum player com nick contendo "${q}".`); break; }
+          console.log(`\n${rows.length} resultado(s) para "${q}":`);
+          for (const p of rows) {
+            const banned = banStore.isPlayerBanned(p.playerId) ? " [BANIDO]" : "";
+            console.log(`  ${p.playerId} | ${p.playerName || "(sem nome)"} | ${p.accountType} | lvl ${p.level} | ${p.kills}K/${p.deaths}D${banned}`);
+          }
+          console.log("");
+          break;
+        }
 
+        case "players": {
+          const limit = parseInt(parts[1], 10) || 50;
+          const offset = parseInt(parts[2], 10) || 0;
+          const { rows, total } = authStore.listAllPlayers(limit, offset);
+          if (rows.length === 0) { console.log("Nenhum player encontrado."); break; }
+          console.log(`\nPlayers ${offset + 1}-${offset + rows.length} de ${total}:`);
+          for (const p of rows) {
+            const banned = banStore.isPlayerBanned(p.playerId) ? " [BANIDO]" : "";
+            const when = new Date(p.createdAt * 1000).toISOString().slice(0, 10);
+            console.log(`  ${p.playerId} | ${p.playerName || "(sem nome)"} | ${p.accountType} | lvl ${p.level} | ${when}${banned}`);
+          }
+          if (offset + rows.length < total) {
+            console.log(`  ... use: players ${limit} ${offset + limit}  (próxima página)`);
+          }
+          console.log("");
+          break;
+        }
         case "unban": {
           const playerId = parts[1];
           if (!playerId) { console.log("Uso: unban <playerId>"); break; }

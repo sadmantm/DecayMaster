@@ -113,6 +113,37 @@ class AuthStore {
       xpToNextLevel: this._xpRequiredForLevel(level),
     };
   }
+  
+  // Busca players por nick (parcial, case-insensitive). Limite pra não travar console.
+  findPlayersByName(query, limit = 25) {
+    return this.db
+      .prepare(
+        `SELECT playerId, playerName, accountType, level, kills, deaths, createdAt
+         FROM accounts
+         WHERE playerName LIKE ? COLLATE NOCASE
+         ORDER BY playerName ASC
+         LIMIT ?`,
+      )
+      .all(`%${query}%`, limit);
+  }
+
+  // Lista todos os players (paginado). offset/limit evitam despejar milhares de linhas.
+  listAllPlayers(limit = 50, offset = 0) {
+    const rows = this.db
+      .prepare(
+        `SELECT playerId, playerName, accountType, level, kills, deaths, createdAt
+         FROM accounts
+         ORDER BY createdAt DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(limit, offset);
+
+    const total = this.db
+      .prepare(`SELECT COUNT(*) AS c FROM accounts`)
+      .get().c;
+
+    return { rows, total, limit, offset };
+  }
 
   getProfile(playerId) {
     const account = this.db
