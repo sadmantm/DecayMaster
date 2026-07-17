@@ -9,14 +9,14 @@
     "windowSeconds": 60,
     "maxRequests": 100
   },
-  "allowedClientBuilds": ["2411"],
+  "allowedClientBuilds": ["2716"],
 "latestClientBuild": {
-    "version": "1.4.3",
-    "sizeMB": 850,
+    "version": "2716",
+    "sizeMB": 480,
     "changelog": [
-      "Corrigido bug de dessincronização ao reconectar",
-      "Novo mapa: Zona Industrial",
-      "Ajustes de balanceamento na arma X"
+      "",
+      "",
+      ""
     ]
   },
   "logLevel": "info",
