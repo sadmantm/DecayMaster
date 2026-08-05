@@ -1,0 +1,42 @@
+{
+  "90035305": {
+    "playerId": 90035305,
+    "devices": [
+      {
+        "deviceId": "android-4cd0ff9636a158f0",
+        "hardwareId": "bddf819ce48cddad303230864d9c6fe4",
+        "ip": "100.76.210.51",
+        "platform": "android",
+        "model": "Xiaomi 2312DRAABG",
+        "firstSeen": 1785693800,
+        "lastSeen": 1785713000,
+        "seenCount": 12
+      },
+      {
+        "deviceId": "unity-8421d30e2a0a87e8dc844440cd991c3103e82663",
+        "hardwareId": "8421d30e2a0a87e8dc844440cd991c3103e82663",
+        "ip": "192.168.1.6",
+        "platform": "windows",
+        "model": "B450M Pro4-CB (To Be Filled By O.E.M.)",
+        "firstSeen": 1785699487,
+        "lastSeen": 1785962109,
+        "seenCount": 43
+      }
+    ]
+  },
+  "98028712": {
+    "playerId": 98028712,
+    "devices": [
+      {
+        "deviceId": "unity-8421d30e2a0a87e8dc844440cd991c3103e82663",
+        "hardwareId": "8421d30e2a0a87e8dc844440cd991c3103e82663",
+        "ip": "100.117.116.13",
+        "platform": "windows",
+        "model": "B450M Pro4-CB (To Be Filled By O.E.M.)",
+        "firstSeen": 1785697181,
+        "lastSeen": 1785715176,
+        "seenCount": 9
+      }
+    ]
+  }
+}

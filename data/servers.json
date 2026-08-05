@@ -1,0 +1,21 @@
+{
+  "8275767a-b67b-419c-a797-1fb500020068": {
+    "serverId": "8275767a-b67b-419c-a797-1fb500020068",
+    "name": "Meu Servidor",
+    "ip": "100.117.116.13",
+    "port": 3000,
+    "serverType": "official",
+    "region": "BR",
+    "maxPlayers": 2,
+    "playersOnline": 1,
+    "status": "Online",
+    "mapId": "island_v1",
+    "buildVersion": "0.1.0",
+    "description": "Servidor brasileiro PvP/PvE",
+    "discordUrl": null,
+    "latencyMs": 48,
+    "registeredAt": 1785961879,
+    "lastHeartbeatAt": 1785962188,
+    "wipeDate": "2026-08-09T09:00:00Z"
+  }
+}

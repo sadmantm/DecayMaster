@@ -1,0 +1,22 @@
+# Dependências
+node_modules/
+
+# Variáveis e credenciais
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+
+# Bancos e arquivos locais
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/tokens.json
+data/push-tokens.json
+data/accounts.db*
+
+# Logs
+*.log
+npm-debug.log*
