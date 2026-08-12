@@ -10,6 +10,7 @@ const http = require("http");
 const { GoogleAuth } = require("google-auth-library");
 const { ShopStore, registrarRotasLoja, iniciarJobsDaLoja } = require("./shop-dc");
 const { iniciarReconciliacao } = require("./shop-reconcile");
+const { PlayWatcher } = require("./play-watcher");
 
 // ===== UTILITY FUNCTIONS =====
 
@@ -1858,13 +1859,13 @@ function montarPayloadRaid(info) {
   } = info;
 
   const quem = atacanteNome ? atacanteNome : "Alguém";
-  const alvo = donoNome ? `a base de ${donoNome}` : "sua base";
+  const alvo = donoNome ? `base de ${donoNome}` : "sua base";
 
   const title = algumaDestruida ? "⚠️ Sua base está caindo" : "⚠️ Sua base está sob ataque";
 
   let body;
   if (algumaDestruida) {
-    body = `${quem} destruiu estruturas em ${alvo}.`;
+    body = `${quem} destruiu estruturas na ${alvo}.`;
   } else if (pecasAtingidas > 1) {
     body = `${quem} está atacando ${alvo} (${pecasAtingidas} estruturas atingidas).`;
   } else {
@@ -2741,6 +2742,22 @@ app.post("/players/online-status", jwtAuth, (req, res) => {
 });
 //#endregion
 
+const playWatcher = new PlayWatcher({
+  config,
+  logger,
+  onNewVersion: ({ version, latestClientBuild, removidas }) => {
+    // avisa quem está no chat que saiu update
+    const payload = JSON.stringify({
+      type: "client_update_available",
+      version,
+      changelog: latestClientBuild.changelog,
+      forced: removidas.length > 0,
+    });
+    for (const [, c] of chatClients) {
+      if (c.ws.readyState === 1) c.ws.send(payload);
+    }
+  },
+});
 // ===== BACKGROUND JOBS =====
 function startBackgroundJobs() {
   setInterval(() => {
@@ -2772,6 +2789,7 @@ function startBackgroundJobs() {
   }, 120000);
   iniciarJobsDePush({ config, logger, pushStore, fcm });
   iniciarReconciliacao({ shopStore, logger, onCredited });
+  playWatcher.start();
   logger.info("Background cleanup jobs started");
 }
 iniciarJobsDaLoja({ shopStore, logger });
@@ -2857,6 +2875,25 @@ Comandos disponíveis:
           if (!orderId) { console.log("Uso: pedido <orderId>"); break; }
           reconcileOrderNow(orderId, { shopStore, logger, onCredited })
             .then((r) => console.log(r));
+          break;
+        }
+
+        case "play": {
+          const s = playWatcher.status();
+          console.log(`\n  track: ${s.track} | intervalo: ${s.intervalSeconds}s | rodando: ${s.running}`);
+          console.log(`  versão atual: ${s.currentVersion}`);
+          console.log(`  builds aceitas: ${s.allowedClientBuilds.join(", ")}`);
+          console.log(`  último check: ${s.lastCheckAt ? new Date(s.lastCheckAt * 1000).toISOString() : "nunca"}`);
+          if (s.lastError) console.log(`  ⚠ último erro: ${s.lastError}`);
+          console.log("");
+          break;
+        }
+        
+        case "playcheck": {
+          console.log("Verificando o Play agora...");
+          playWatcher.check({ manual: true })
+            .then((r) => console.log(r.changed ? `✓ atualizado para ${r.version}` : `sem mudança (${r.reason})`))
+            .catch((e) => console.error("✗ erro:", e.message));
           break;
         }
         

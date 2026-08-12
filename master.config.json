@@ -1,47 +1,62 @@
 {
-    "serverName": "DECAY Master Server",
-    "host": "0.0.0.0",
-    "port": 3000,
-    "publicBaseUrl": "https://telecom-must-specific-device.trycloudflare.com",
-    "tokenTTLSeconds": 60,
-    "heartbeatTTLSeconds": 90,
-    "rateLimit": {
-      "windowSeconds": 60,
-      "maxRequests": 100
-    },
-    "allowedClientBuilds": ["2727"],
+  "serverName": "DECAY Master Server",
+  "host": "0.0.0.0",
+  "port": 3000,
+  "publicBaseUrl": "https://telecom-must-specific-device.trycloudflare.com",
+  "tokenTTLSeconds": 60,
+  "heartbeatTTLSeconds": 90,
+  "rateLimit": {
+    "windowSeconds": 60,
+    "maxRequests": 100
+  },
+  "allowedClientBuilds": [
+    "2808-2"
+  ],
   "latestClientBuild": {
-      "version": "2716",
-      "sizeMB": 480,
-      "changelog": [
-        "",
-        "",
-        ""
-      ]
-    },
-    "logLevel": "info",
-    "serverKey": "your-secret-server-key-change-in-production",
-    "jwtSecret": "CHANGE_THIS_TO_A_SECURE_RANDOM_STRING",
-    "jwtExpirySeconds": 604800,
-    "googleClientId": "309430069691-tvg6e9aqbh7h9i1b8ia45svdd6gvttnr.apps.googleusercontent.com",
-    "fcm": {
-      "projectId": "decay-survival---ofc",
-      "serviceAccountPath": "./secrets/firebase-admin.json",
-      "dryRun": false,
-      "concurrency": 10
-    },
-    "pushStorePath": "./data/push-tokens.json",
-    "push": {
-      "raidCooldownSeconds": 150,
-      "reengagementEnabled": true,
-      "reengagementIntervalMinutes": 60,
-      "reengagementMaxPerRun": 200,
-      "reengagementInactiveHours": 24,
-      "reengagementMaxInactiveDays": 30,
-      "reengagementCooldownHours": 48,
-      "reengagementMaxStreak": 4,
-      "quietHoursEnd": 11,
-      "quietHoursStart": 21
-    }
+    "version": "2808-2",
+    "sizeMB": 480,
+    "changelog": [
+      "Horário de raid e wipe automático.",
+      "Construção triangular e meia parede.",
+      "Novas torretas e armadilha de espinhos.",
+      "Novo sistema de iluminação.",
+      "Balanceamento de combate e loot.",
+      "Melhorias de desempenho e diversas correções de bugs."
+    ]
+  },
+  "logLevel": "info",
+  "serverKey": "your-secret-server-key-change-in-production",
+  "jwtSecret": "CHANGE_THIS_TO_A_SECURE_RANDOM_STRING",
+  "jwtExpirySeconds": 604800,
+  "googleClientId": "309430069691-tvg6e9aqbh7h9i1b8ia45svdd6gvttnr.apps.googleusercontent.com",
+  "fcm": {
+    "projectId": "decay-survival---ofc",
+    "serviceAccountPath": "./secrets/firebase-admin.json",
+    "dryRun": false,
+    "concurrency": 10
+  },
+  "playWatcher": {
+    "enabled": true,
+    "packageName": "com.sadmantm.decaysurvival",
+    "serviceAccountFile": "./secrets/play-service-account.json",
+    "track": "production",
+    "intervalSeconds": 300,
+    "minUserFraction": 0.99,
+    "keepPreviousBuilds": 0,
+    "changelogLanguage": "pt-BR",
+    "versionNameOverrides": {}
+  },
+  "pushStorePath": "./data/push-tokens.json",
+  "push": {
+    "raidCooldownSeconds": 150,
+    "reengagementEnabled": true,
+    "reengagementIntervalMinutes": 60,
+    "reengagementMaxPerRun": 200,
+    "reengagementInactiveHours": 24,
+    "reengagementMaxInactiveDays": 30,
+    "reengagementCooldownHours": 48,
+    "reengagementMaxStreak": 4,
+    "quietHoursEnd": 11,
+    "quietHoursStart": 21
   }
-  
+}

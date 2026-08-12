@@ -5,9 +5,10 @@ node_modules/
 .env
 .env.*
 !.env.example
-secrets/
 *.pem
 *.key
+secrets/play-service-account.json
+secrets/firebase-admin.json
 
 # Bancos e arquivos locais
 data/*.db
