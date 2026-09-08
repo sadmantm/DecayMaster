@@ -147,19 +147,44 @@ class PlayWatcher {
 
   /**
    * versionCode (42) -> versionName ("1.4.0").
-   * A API só garante o versionCode; o versionName aparece no campo `name`,
-   * que por padrão o Play preenche como "1.4.0 (42)". A regex extrai o
-   * primeiro grupo x.y[.z]. Se seu fluxo usa nomes customizados de release,
-   * preencha playWatcher.versionNameOverrides.
+   *
+   * A API só garante o versionCode; o versionName precisa ser inferido do
+   * campo `name` do release, que o Play Console preenche de formas diferentes
+   * dependendo de como a pessoa nomeou o release manualmente. Duas formas
+   * observadas até agora:
+   *
+   *   1) "{versionCode} ({versionName})"  ex: "7 (2808-2)"  -> "2808-2"
+   *   2) "v{versionName}"                 ex: "v2814"       -> "2814"
+   *
+   * Em ambos os casos o "v" de prefixo (quando existir) é removido, pra que
+   * o valor final bata exatamente com o que é usado em allowedClientBuilds
+   * (ex: "2814", não "v2814").
+   *
+   * Se nenhum padrão bater, cai em versionNameOverrides antes de desistir —
+   * mas o override é checado primeiro no início da função, então releases
+   * com nomes totalmente livres continuam cobertos manualmente.
    */
   _resolveVersionName(release) {
     const overrides = this.opts.versionNameOverrides || {};
     const override = overrides[String(release.versionCode)];
     if (override) return override;
   
-    // formato do Play: "{versionCode} ({versionName})"
-    const match = String(release.name || "").match(/\(([^)]+)\)/);
-    return match ? match[1].trim() : null;
+    const name = String(release.name || "").trim();
+  
+    // formato 1: "{versionCode} ({versionName})" -> pega o que está entre parênteses
+    const parenMatch = name.match(/\(([^)]+)\)/);
+    if (parenMatch) {
+      return parenMatch[1].trim().replace(/^v/i, "");
+    }
+  
+    // formato 2: "v{versionName}" (ou só "{versionName}") sem parênteses
+    // aceita dígitos e hífen, ex: "v2814", "v2808-2", "2814"
+    const looseMatch = name.match(/^v?(\d[\d-]*)$/i);
+    if (looseMatch) {
+      return looseMatch[1].trim();
+    }
+  
+    return null;
   }
 
   _extractChangelog(release) {

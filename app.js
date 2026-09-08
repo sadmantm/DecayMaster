@@ -9,6 +9,12 @@ const { WebSocketServer } = require("ws");
 const http = require("http");
 const { GoogleAuth } = require("google-auth-library");
 const { ShopStore, registrarRotasLoja, iniciarJobsDaLoja } = require("./shop-dc");
+const {
+  GoogleShopStore,
+  registrarRotasGooglePlay,
+  iniciarJobsGooglePlay,
+  bloquearMercadoPagoNaPlayStore,
+} = require("./shop-google");
 const { iniciarReconciliacao } = require("./shop-reconcile");
 const { PlayWatcher } = require("./play-watcher");
 
@@ -688,6 +694,61 @@ class DataStore {
   }
 }
 
+class SkinCatalogStore {
+  constructor(config, logger) {
+    this.logger = logger;
+    this.path = path.join(process.cwd(), "data", "skins.json");
+    this.entries = new Map();
+    this.reload();
+  }
+
+  reload() {
+    try {
+      if (!fs.existsSync(this.path)) {
+        this.logger.warn(`[SkinCatalog] ${this.path} não encontrado. Catálogo vazio.`);
+        this.entries = new Map();
+        return 0;
+      }
+
+      const raw = JSON.parse(fs.readFileSync(this.path, "utf8"));
+      const map = new Map();
+
+      for (const s of raw.skins || []) {
+        if (typeof s.skinId !== "number" || typeof s.price !== "number" || s.price < 0) {
+          this.logger.error(`[SkinCatalog] Entrada inválida ignorada: ${JSON.stringify(s)}`);
+          continue;
+        }
+        if (map.has(s.skinId)) {
+          this.logger.error(`[SkinCatalog] skinId duplicado ignorado: ${s.skinId}`);
+          continue;
+        }
+        map.set(s.skinId, {
+          skinId: s.skinId,
+          price: s.price,
+          currency: s.currency === "DS" ? "DS" : "DC",
+          available: s.available !== false,
+          slotKey: typeof s.slotKey === "string" ? s.slotKey : null,
+        });
+      }
+
+      this.entries = map;
+      this.logger.info(`[SkinCatalog] ${map.size} skins carregadas.`);
+      return map.size;
+    } catch (e) {
+      this.logger.error("[SkinCatalog] Falha ao carregar:", e);
+      return 0;
+    }
+  }
+
+  get(skinId) {
+    return this.entries.get(skinId) || null;
+  }
+
+  listAvailable() {
+    return [...this.entries.values()].filter((e) => e.available);
+  }
+}
+
 function toPublicServer(server) {
   return {
     serverId: server.serverId,
@@ -706,6 +767,7 @@ function toPublicServer(server) {
   };
 }
 
+// Servidor master (app.js)
 class AuthStore {
   constructor(config, logger) {
     this.config = config;
@@ -757,19 +819,66 @@ class AuthStore {
       );
 
       CREATE TABLE IF NOT EXISTS skins (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        playerId   INTEGER NOT NULL,
+        skinId     INTEGER NOT NULL,
+        acquiredAt INTEGER NOT NULL,
+        expiresAt  INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (playerId, skinId),
+        FOREIGN KEY (playerId) REFERENCES accounts(playerId) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS equipped_skins (
         playerId INTEGER NOT NULL,
-        skinId INTEGER NOT NULL,
-        category TEXT NOT NULL CHECK(category IN ('weapon', 'character', 'world')),
-        expiresAt INTEGER,
+        slotKey  TEXT    NOT NULL,
+        skinId   INTEGER NOT NULL,
+        equippedAt INTEGER NOT NULL,
+        PRIMARY KEY (playerId, slotKey),
         FOREIGN KEY (playerId) REFERENCES accounts(playerId) ON DELETE CASCADE
       );
 
       CREATE INDEX IF NOT EXISTS idx_sessions_playerId ON sessions(playerId);
       CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
-      CREATE INDEX IF NOT EXISTS idx_skins_playerId ON skins(playerId);
     `);
+    this._migrateSkinsTable();
   }
+
+_migrateSkinsTable() {
+    const cols = this.db.prepare(`PRAGMA table_info(skins)`).all();
+    if (cols.length === 0) return;
+
+    const hasCategory = cols.some((c) => c.name === "category");
+    const hasAcquiredAt = cols.some((c) => c.name === "acquiredAt");
+    if (!hasCategory && hasAcquiredAt) return; // já migrado
+
+    this.logger.warn("[Migration] Recriando tabela `skins` (novo schema de posse)...");
+
+    const now = nowSeconds();
+    const run = this.db.transaction(() => {
+      this.db.exec(`
+        CREATE TABLE skins_new (
+          playerId   INTEGER NOT NULL,
+          skinId     INTEGER NOT NULL,
+          acquiredAt INTEGER NOT NULL,
+          expiresAt  INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (playerId, skinId),
+          FOREIGN KEY (playerId) REFERENCES accounts(playerId) ON DELETE CASCADE
+        );
+      `);
+
+      // INSERT OR IGNORE colapsa duplicatas que o schema antigo permitia.
+      this.db.exec(`
+        INSERT OR IGNORE INTO skins_new (playerId, skinId, acquiredAt, expiresAt)
+        SELECT playerId, skinId, ${now}, COALESCE(expiresAt, 0) FROM skins;
+      `);
+
+      this.db.exec(`DROP TABLE skins;`);
+      this.db.exec(`ALTER TABLE skins_new RENAME TO skins;`);
+      this.db.exec(`DROP INDEX IF EXISTS idx_skins_playerId;`);
+    });
+
+    run();
+    this.logger.info("[Migration] Tabela `skins` migrada com sucesso.");
+}
 
   _xpRequiredForLevel(level) {
     return Math.floor(100 * Math.pow(level, 1.5));
@@ -813,6 +922,108 @@ class AuthStore {
       levelsGained,
       xpToNextLevel: this._xpRequiredForLevel(level),
     };
+  }
+
+  /**
+   * Compra atômica. `entry` vem do SkinCatalogStore — NUNCA do cliente.
+   * Ordem proposital: INSERT primeiro, débito depois.
+   *   - INSERT falha (0 changes) => já possui => idempotente, não cobra.
+   *   - Débito falha (0 changes) => saldo insuficiente => throw => rollback
+   *     desfaz o INSERT. Impossível receber skin sem pagar.
+   */
+  buySkin(playerId, entry) {
+    const column = entry.currency === "DS" ? "balanceDS" : "balanceDC";
+
+    const tx = this.db.transaction(() => {
+      const account = this.db
+        .prepare(`SELECT balanceDC, balanceDS FROM accounts WHERE playerId = ?`)
+        .get(playerId);
+
+      if (!account) throw { status: 404, message: "Conta não encontrada" };
+
+      const inserted = this.db
+        .prepare(
+          `INSERT OR IGNORE INTO skins (playerId, skinId, acquiredAt, expiresAt)
+           VALUES (?, ?, ?, 0)`,
+        )
+        .run(playerId, entry.skinId, nowSeconds());
+
+      if (inserted.changes === 0) {
+        return {
+          alreadyOwned: true,
+          charged: 0,
+          balanceDC: account.balanceDC,
+          balanceDS: account.balanceDS,
+        };
+      }
+
+      if (entry.price > 0) {
+        // Débito condicional: o WHERE é a trava anti-race. Nada de SELECT+UPDATE.
+        const debit = this.db
+          .prepare(
+            `UPDATE accounts SET ${column} = ${column} - ?
+             WHERE playerId = ? AND ${column} >= ?`,
+          )
+          .run(entry.price, playerId, entry.price);
+
+        if (debit.changes === 0) {
+          throw { status: 402, message: "Saldo insuficiente" };
+        }
+      }
+
+      const updated = this.db
+        .prepare(`SELECT balanceDC, balanceDS FROM accounts WHERE playerId = ?`)
+        .get(playerId);
+
+      return {
+        alreadyOwned: false,
+        charged: entry.price,
+        balanceDC: updated.balanceDC,
+        balanceDS: updated.balanceDS,
+      };
+    });
+
+    return tx();
+  }
+
+  getOwnedSkinIds(playerId) {
+    return this.db
+      .prepare(`SELECT skinId FROM skins WHERE playerId = ?`)
+      .all(playerId)
+      .map((r) => r.skinId);
+  }
+
+  equipSkin(playerId, entry) {
+    if (!entry.slotKey) throw { status: 400, message: "Skin sem slot definido" };
+
+    const owns = this.db
+      .prepare(`SELECT 1 FROM skins WHERE playerId = ? AND skinId = ?`)
+      .get(playerId, entry.skinId);
+
+    if (!owns) throw { status: 403, message: "Você não possui esta skin" };
+
+    this.db
+      .prepare(
+        `INSERT INTO equipped_skins (playerId, slotKey, skinId, equippedAt)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(playerId, slotKey) DO UPDATE SET skinId = excluded.skinId, equippedAt = excluded.equippedAt`,
+      )
+      .run(playerId, entry.slotKey, entry.skinId, nowSeconds());
+
+    return { slotKey: entry.slotKey, skinId: entry.skinId };
+  }
+
+  unequipSlot(playerId, slotKey) {
+    const r = this.db
+      .prepare(`DELETE FROM equipped_skins WHERE playerId = ? AND slotKey = ?`)
+      .run(playerId, slotKey);
+    return r.changes > 0;
+  }
+
+  getEquipped(playerId) {
+    return this.db
+      .prepare(`SELECT slotKey, skinId FROM equipped_skins WHERE playerId = ?`)
+      .all(playerId);
   }
   
   // Busca players por nick (parcial, case-insensitive). Limite pra não travar console.
@@ -860,13 +1071,14 @@ class AuthStore {
     }
 
     const skins = this.db
-      .prepare(`SELECT skinId, category, expiresAt FROM skins WHERE playerId = ?`)
-      .all(playerId);
+    .prepare(`SELECT skinId, acquiredAt, expiresAt FROM skins WHERE playerId = ?`)
+    .all(playerId);
 
     return {
       ...account,
       xpToNextLevel: this._xpRequiredForLevel(account.level),
       skins,
+      equipped: this.getEquipped(playerId),   // ← ESTA
     };
   }
 
@@ -1987,6 +2199,9 @@ const fcm = new FcmSender(config, logger);
 const app = express();
 const chatClients = new Map();
 const shopStore = new ShopStore(authStore.db, config, logger);
+const googleShop = new GoogleShopStore(authStore.db, config, logger);
+const skinCatalog = new SkinCatalogStore(config, logger);
+
 
 function extractFingerprint(req) {
   return {
@@ -2044,6 +2259,9 @@ registrarRotasLoja(app, {
   config, logger, shopStore, authStore, jwtAuth, serverAuth, rateLimiter, onCredited,
 });
 
+registrarRotasGooglePlay(app, {
+  config, logger, googleShop, jwtAuth, rateLimiter, onCredited,
+});
 
 //#region Rotas servidores
 
@@ -2357,6 +2575,7 @@ app.get("/stats", (req, res) => {
 });
 
 //#endregion
+
 
 //#region Rotas Contas
 
@@ -2742,6 +2961,108 @@ app.post("/players/online-status", jwtAuth, (req, res) => {
 });
 //#endregion
 
+//#region Rotas Skins
+
+app.get("/shop/catalog", jwtAuth, (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      skins: skinCatalog.listAvailable(),
+      owned: authStore.getOwnedSkinIds(req.playerId),
+    });
+  } catch (error) {
+    logger.error("Shop catalog error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+app.post("/shop/buy", jwtAuth, rateLimiter.middleware(), (req, res) => {
+  const { skinId } = req.body;
+
+  // Só o ID. Preço/moeda vindos do cliente são ignorados por construção.
+  if (typeof skinId !== "number" || !Number.isInteger(skinId)) {
+    return res.status(400).json({ ok: false, error: "skinId must be an integer" });
+  }
+
+  const entry = skinCatalog.get(skinId);
+  if (!entry || !entry.available) {
+    logger.warn(`Buy rejeitado: skin ${skinId} inexistente/indisponível (player ${req.playerId})`);
+    return res.status(404).json({ ok: false, error: "Skin não encontrada" });
+  }
+
+  try {
+    const result = authStore.buySkin(req.playerId, entry);
+
+    logger.info(
+      `Buy skin ${skinId} por player ${req.playerId} | ` +
+        (result.alreadyOwned
+          ? "JÁ POSSUÍA (idempotente)"
+          : `-${result.charged} ${entry.currency}`),
+    );
+
+    res.json({ ok: true, skinId, currency: entry.currency, ...result });
+  } catch (error) {
+    if (error.status === 402) {
+      return res.status(402).json({
+        ok: false, error: error.message, code: "INSUFFICIENT_FUNDS",
+        currency: entry.currency, price: entry.price,
+      });
+    }
+    return res.status(404).json({
+      ok: false, error: error.message, code: "SKIN_NOT_FOUND",
+      currency: entry.currency, price: entry.price,
+    });
+    if (error.status) {
+      return res.status(error.status).json({ ok: false, error: error.message });
+    }
+    logger.error("Buy skin error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+app.post("/shop/equip", jwtAuth, (req, res) => {
+  const { skinId } = req.body;
+  if (!Number.isInteger(skinId))
+    return res.status(400).json({ ok: false, error: "skinId must be an integer" });
+
+  const entry = skinCatalog.get(skinId);
+  if (!entry) return res.status(404).json({ ok: false, error: "Skin não encontrada", code: "SKIN_NOT_FOUND" });
+
+  try {
+    const result = authStore.equipSkin(req.playerId, entry);
+    logger.info(`Player ${req.playerId} equipou skin ${skinId} em ${result.slotKey}`);
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ ok: false, error: error.message });
+    logger.error("Equip error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+app.post("/shop/unequip", jwtAuth, (req, res) => {
+  const { slotKey } = req.body;
+  if (typeof slotKey !== "string" || !slotKey)
+    return res.status(400).json({ ok: false, error: "slotKey required" });
+
+  const removed = authStore.unequipSlot(req.playerId, slotKey);
+  res.json({ ok: true, slotKey, removed });
+});
+
+// 🔒 serverAuth: quem chama é o GAME SERVER, não o cliente.
+app.get("/players/:playerId/equipped", serverAuth, (req, res) => {
+  const playerId = parseInt(req.params.playerId, 10);
+  if (!Number.isInteger(playerId))
+    return res.status(400).json({ ok: false, error: "Invalid playerId" });
+
+  try {
+    res.json({ ok: true, playerId, equipped: authStore.getEquipped(playerId) });
+  } catch (error) {
+    logger.error("Get equipped error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+//#endregion
+
 const playWatcher = new PlayWatcher({
   config,
   logger,
@@ -2793,6 +3114,7 @@ function startBackgroundJobs() {
   logger.info("Background cleanup jobs started");
 }
 iniciarJobsDaLoja({ shopStore, logger });
+iniciarJobsGooglePlay({ googleShop, logger, onCredited });
 
 function kickFromChat(playerId, reason = "Você foi banido") {
   pushStore.removeTokensOfPlayer(playerId);

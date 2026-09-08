@@ -1,0 +1,53 @@
+{
+    "skins": [
+        {
+            "skinId": 2001,
+            "price": 60,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:AK47"
+        },
+        {
+            "skinId": 2002,
+            "price": 500,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:AK47"
+        },
+        {
+            "skinId": 2003,
+            "price": 500,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:AK47"
+        },
+        {
+            "skinId": 2004,
+            "price": 500,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:AK47"
+        },
+        {
+            "skinId": 2005,
+            "price": 500,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:AK47"
+        },
+        {
+            "skinId": 2006,
+            "price": 500,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:AK47"
+        },
+        {
+            "skinId": 2007,
+            "price": 0,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:AK47"
+        }
+    ]
+}

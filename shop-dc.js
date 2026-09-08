@@ -43,7 +43,7 @@ function mpDate(ms) {
 // ============================================================================
 
 const DC_PACKAGES = [
-  { packageId: "dc_60",   amountDC: 60,   bonusDC: 0, priceCents: 490 },
+  { packageId: "dc_4.90",   amountDC: 60,   bonusDC: 0, priceCents: 490 },
   { packageId: "dc_300",  amountDC: 300,  bonusDC: 0, priceCents: 1990 },
   { packageId: "dc_680",  amountDC: 680,  bonusDC: 0, priceCents: 3990 },
   { packageId: "dc_1280", amountDC: 1280, bonusDC: 0, priceCents: 6990 },
