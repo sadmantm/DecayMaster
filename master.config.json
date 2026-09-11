@@ -10,10 +10,10 @@
     "maxRequests": 100
   },
   "allowedClientBuilds": [
-    "2814"
+    "3708"
   ],
   "latestClientBuild": {
-    "version": "2814",
+    "version": "3708",
     "sizeMB": 480,
     "changelog": [
       "Sistema de sons melhorado, com áudio a longas distâncias.",
@@ -35,7 +35,7 @@
     "concurrency": 10
   },
   "playWatcher": {
-    "enabled": true,
+    "enabled": false,
     "packageName": "com.sadmantm.decaysurvival",
     "serviceAccountFile": "./secrets/play-service-account.json",
     "track": "production",

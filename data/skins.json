@@ -9,45 +9,87 @@
         },
         {
             "skinId": 2002,
-            "price": 500,
+            "price": 60,
             "currency": "DC",
             "available": true,
             "slotKey": "weapon:AK47"
         },
         {
             "skinId": 2003,
-            "price": 500,
+            "price": 400,
             "currency": "DC",
             "available": true,
             "slotKey": "weapon:AK47"
         },
         {
             "skinId": 2004,
-            "price": 500,
+            "price": 380,
             "currency": "DC",
             "available": true,
             "slotKey": "weapon:AK47"
         },
         {
             "skinId": 2005,
-            "price": 500,
+            "price": 60,
             "currency": "DC",
             "available": true,
             "slotKey": "weapon:AK47"
         },
         {
             "skinId": 2006,
-            "price": 500,
+            "price": 80,
             "currency": "DC",
             "available": true,
             "slotKey": "weapon:AK47"
         },
         {
             "skinId": 2007,
-            "price": 0,
+            "price": 440,
             "currency": "DC",
             "available": true,
             "slotKey": "weapon:AK47"
+        },
+        {
+            "skinId": 2008,
+            "price": 90,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:RIFLE-CACA"
+        },
+        {
+            "skinId": 2009,
+            "price": 200,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:RIFLE-CACA"
+        },
+        {
+            "skinId": 2010,
+            "price": 170,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:RIFLE-CACA"
+        },
+        {
+            "skinId": 2011,
+            "price": 460,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:RIFLE-CACA"
+        },
+        {
+            "skinId": 2012,
+            "price": 220,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:RIFLE-CACA"
+        },
+        {
+            "skinId": 2013,
+            "price": 400,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:RIFLE-CACA"
         }
     ]
 }
