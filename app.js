@@ -8,7 +8,6 @@ const jwt = require("jsonwebtoken");
 const { WebSocketServer } = require("ws");
 const http = require("http");
 const { GoogleAuth } = require("google-auth-library");
-const { ShopStore, registrarRotasLoja, iniciarJobsDaLoja } = require("./shop-dc");
 const {
   GoogleShopStore,
   registrarRotasGooglePlay,
@@ -17,6 +16,10 @@ const {
 } = require("./shop-google");
 const { iniciarReconciliacao } = require("./shop-reconcile");
 const { PlayWatcher } = require("./play-watcher");
+
+const { ShopStore, registrarRotasLoja, iniciarJobsDaLoja,
+  processPayment, findPaymentByOrderId } = require("./shop-dc");
+const { registrarRotasAdmin } = require("./admin-routes");
 
 // ===== UTILITY FUNCTIONS =====
 
@@ -1037,6 +1040,22 @@ _migrateSkinsTable() {
          LIMIT ?`,
       )
       .all(`%${query}%`, limit);
+  }
+
+  searchPlayers(requesterId, query, limit = 20) {
+    return this.db
+      .prepare(
+        `SELECT playerId, playerName, level, kills, deaths
+         FROM accounts
+         WHERE playerName IS NOT NULL
+           AND playerName LIKE ? COLLATE NOCASE
+           AND playerId != ?
+         ORDER BY
+           CASE WHEN playerName = ? COLLATE NOCASE THEN 0 ELSE 1 END,
+           playerName ASC
+         LIMIT ?`,
+      )
+      .all(`%${query}%`, requesterId, query, limit);
   }
 
   // Lista todos os players (paginado). offset/limit evitam despejar milhares de linhas.
@@ -2217,8 +2236,11 @@ function extractFingerprint(req) {
 app.use((req, res, next) => {
   logger.debug(`${req.method} ${req.path} from ${req.ip}`);
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, X-Server-Key");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Server-Key, X-Admin-Key, X-Device-Id, X-Store, X-Platform",
+  );
   res.header("Access-Control-Max-Age", "86400");
   if (req.method === "OPTIONS") return res.status(200).end();
   next();
@@ -2254,6 +2276,8 @@ const jwtAuth = (req, res, next) => {
   req.token = token;
   next();
 };
+
+app.use("/shop/dc/checkout", jwtAuth, bloquearMercadoPagoNaPlayStore(config, logger));
 
 registrarRotasLoja(app, {
   config, logger, shopStore, authStore, jwtAuth, serverAuth, rateLimiter, onCredited,
@@ -3008,10 +3032,9 @@ app.post("/shop/buy", jwtAuth, rateLimiter.middleware(), (req, res) => {
         currency: entry.currency, price: entry.price,
       });
     }
-    return res.status(404).json({
-      ok: false, error: error.message, code: "SKIN_NOT_FOUND",
-      currency: entry.currency, price: entry.price,
-    });
+    if (error.status === 404) {
+      return res.status(404).json({ ok: false, error: error.message, code: "ACCOUNT_NOT_FOUND" });
+    }
     if (error.status) {
       return res.status(error.status).json({ ok: false, error: error.message });
     }
@@ -3079,6 +3102,12 @@ const playWatcher = new PlayWatcher({
     }
   },
 });
+
+registrarRotasAdmin(app, {
+  config, logger, store, authStore, banStore, pushStore, fcm,
+  shopStore, googleShop, skinCatalog, chatClients, playWatcher,
+  rateLimiter, kickFromChat, onCredited,
+});
 // ===== BACKGROUND JOBS =====
 function startBackgroundJobs() {
   setInterval(() => {
@@ -3126,6 +3155,51 @@ function kickFromChat(playerId, reason = "Você foi banido") {
       setTimeout(() => client.ws.close(), 100);
     }
   }
+}
+
+async function reconcileOrderNow(orderId, { shopStore, logger, onCredited }) {
+  const order = shopStore.getOrder(orderId);
+  if (!order) return { ok: false, error: "pedido não encontrado" };
+
+  const payment = order.paymentId
+    ? { id: order.paymentId }
+    : await findPaymentByOrderId(order.orderId);
+
+  if (!payment?.id) {
+    return { ok: true, found: false, status: order.status, msg: "nenhum pagamento no MP para este pedido" };
+  }
+
+  const result = await processPayment(payment.id, { shopStore, logger, onCredited });
+  const fresh = shopStore.getOrder(orderId);
+  return { ok: true, found: true, paymentId: payment.id, status: fresh.status, credited: !!fresh.creditedAt, result };
+}
+
+// Resumo de pedidos MP das últimas N horas + pedidos pendentes há muito tempo.
+function relatorioPedidos(shopStore, horas = 24) {
+  const desde = nowSeconds() - horas * 3600;
+
+  const rows = shopStore.db
+    .prepare(
+      `SELECT status, COUNT(*) AS total, COALESCE(SUM(priceCents), 0) AS cents
+       FROM dc_orders WHERE createdAt >= ?
+       GROUP BY status ORDER BY total DESC`,
+    )
+    .all(desde);
+
+  // "travado": pendente com paymentId (Pix gerado) e passou do prazo, ou em review
+  const stuck = shopStore.db
+    .prepare(
+      `SELECT orderId, playerId, status, paymentId, createdAt,
+              CAST((? - createdAt) / 3600 AS INTEGER) AS checkCount
+       FROM dc_orders
+       WHERE creditedAt IS NULL
+         AND (status = 'review' OR (status IN ('pending','expired') AND paymentId IS NOT NULL AND expiresAt < ?))
+         AND createdAt >= ?
+       ORDER BY createdAt DESC LIMIT 50`,
+    )
+    .all(nowSeconds(), nowSeconds(), desde);
+
+  return { rows, stuck };
 }
 
 // ===== ADMIN CONSOLE (stdin) =====

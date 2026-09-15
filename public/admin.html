@@ -1,0 +1,998 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DECAY — Painel do Master</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#1c222b; --surface:#242c37; --surface2:#2c3542; --line:#3a4554; --line2:#4a5667;
+  --text:#e7ebf1; --muted:#8e9aac; --dim:#65718a;
+  --gold:#e0a83f; --gold2:#f1c667; --ok:#67b784; --danger:#d96b6b; --info:#6fa5de; --violet:#a98fe0;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  --r:6px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.5 var(--sans)}
+a{color:var(--gold2);text-decoration:none}a:hover{text-decoration:underline}
+button,input,select,textarea{font:inherit;color:inherit}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
+h1{font-size:22px}h2{font-size:16px}h3{font-size:14px;color:var(--muted);font-weight:500}
+code,.mono{font-family:var(--mono);font-size:12.5px}
+:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ── shell ── */
+#login{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:50}
+#login form{width:360px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:28px}
+#login h1{margin-bottom:4px}#login p{color:var(--muted);margin:0 0 18px}
+#app{display:none;grid-template-columns:216px 1fr;grid-template-rows:56px 1fr;height:100vh}
+#app.on{display:grid}
+.brand{grid-row:1;grid-column:1;display:flex;align-items:center;gap:10px;padding:0 18px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.brand b{font-size:15px;letter-spacing:.06em}
+.brand i{width:10px;height:10px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px rgba(103,183,132,.2)}
+.brand i.off{background:var(--danger);box-shadow:0 0 0 3px rgba(217,107,107,.2)}
+nav{grid-row:2;grid-column:1;border-right:1px solid var(--line);padding:14px 10px;overflow:auto}
+nav .grp{color:var(--dim);font-size:12px;padding:12px 10px 4px}
+nav a{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-radius:var(--r);color:var(--text);font-weight:500}
+nav a:hover{background:var(--surface);text-decoration:none}
+nav a.on{background:var(--surface2);color:var(--gold2)}
+nav a .n{font-size:11.5px;color:var(--muted);background:var(--bg);padding:0 6px;border-radius:9px}
+header{grid-row:1;grid-column:2;display:flex;align-items:center;gap:14px;padding:0 22px;border-bottom:1px solid var(--line)}
+main{grid-row:2;grid-column:2;overflow:auto;padding:22px 26px 60px}
+.cmd{position:relative;flex:1;max-width:640px}
+.cmd input{width:100%;height:36px;padding:0 12px 0 38px;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.cmd input:focus{border-color:var(--gold)}
+.cmd svg{position:absolute;left:12px;top:10px;width:16px;height:16px;fill:none;stroke:var(--muted);stroke-width:2}
+.cmd kbd{position:absolute;right:10px;top:9px;font:11px var(--mono);color:var(--dim);border:1px solid var(--line);border-radius:4px;padding:0 5px;line-height:16px}
+.cmd .drop{position:absolute;top:42px;left:0;right:0;background:var(--surface);border:1px solid var(--line2);border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.4);z-index:20;overflow:hidden;display:none}
+.cmd .drop.on{display:block}
+.cmd .drop div{padding:9px 14px;cursor:pointer;display:flex;justify-content:space-between;gap:10px}
+.cmd .drop div:hover,.cmd .drop div.sel{background:var(--surface2)}
+.cmd .drop small{color:var(--muted)}
+header .me{color:var(--muted);font-size:13px;white-space:nowrap}
+header .me b{color:var(--text);font-weight:500}
+
+/* ── layout bits ── */
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:18px;flex-wrap:wrap}
+.top p{color:var(--muted);margin:2px 0 0}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+@media (max-width:1100px){.g4{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr}}
+@media (max-width:760px){#app{grid-template-columns:1fr}nav{display:none}.brand{display:none}header,main{grid-column:1}.g2,.g3,.g4{grid-template-columns:1fr}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.panel > h2,.panel > .ph{margin-bottom:12px}
+.ph{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.stat{padding:14px 16px}
+.stat .v{font-size:26px;font-weight:600;line-height:1.1;margin-top:4px;font-variant-numeric:tabular-nums}
+.stat .l{color:var(--muted);font-size:13px}
+.stat .s{color:var(--dim);font-size:12px;margin-top:6px}
+.stat.gold .v{color:var(--gold2)}.stat.ok .v{color:var(--ok)}.stat.danger .v{color:var(--danger)}.stat.info .v{color:var(--info)}
+.empty{color:var(--muted);padding:26px;text-align:center;border:1px dashed var(--line);border-radius:var(--r)}
+.hint{color:var(--muted);font-size:12.5px}
+.warnbox{background:rgba(224,168,63,.1);border:1px solid rgba(224,168,63,.35);color:var(--gold2);padding:10px 14px;border-radius:var(--r);font-size:13px}
+.dangerbox{background:rgba(217,107,107,.1);border:1px solid rgba(217,107,107,.35);color:#f0a0a0;padding:10px 14px;border-radius:var(--r);font-size:13px}
+
+/* ── tables ── */
+.tw{overflow:auto;border:1px solid var(--line);border-radius:var(--r)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:middle}
+th{color:var(--muted);font-weight:500;background:var(--surface2);position:sticky;top:0}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:rgba(255,255,255,.02)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.click{cursor:pointer}
+.pager{display:flex;justify-content:space-between;align-items:center;margin-top:10px;color:var(--muted);font-size:13px}
+
+/* ── tags ── */
+.tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;background:var(--surface2);color:var(--muted);border:1px solid var(--line)}
+.tag.ok{color:var(--ok);border-color:rgba(103,183,132,.4)}.tag.danger{color:var(--danger);border-color:rgba(217,107,107,.4)}
+.tag.gold{color:var(--gold2);border-color:rgba(224,168,63,.4)}.tag.info{color:var(--info);border-color:rgba(111,165,222,.4)}
+.tag.violet{color:var(--violet);border-color:rgba(169,143,224,.4)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--dim);margin-right:6px;vertical-align:1px}
+.dot.on{background:var(--ok)}
+
+/* ── forms ── */
+.f{display:flex;flex-direction:column;gap:4px}
+.f label{color:var(--muted);font-size:12.5px}
+.f .sub{color:var(--dim);font-size:12px}
+input[type=text],input[type=number],input[type=password],input[type=email],select,textarea{
+  background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:7px 10px;min-width:0;width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--gold);outline:none}
+textarea{resize:vertical;min-height:80px}
+textarea.code{font-family:var(--mono);font-size:12.5px;min-height:300px;line-height:1.5}
+input.sm,select.sm{padding:5px 8px;width:auto}
+.check{display:flex;gap:8px;align-items:center;color:var(--text);cursor:pointer}
+.check input{width:16px;height:16px;accent-color:var(--gold)}
+.btn{background:var(--surface2);border:1px solid var(--line2);border-radius:var(--r);padding:7px 13px;cursor:pointer;font-weight:500;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--muted)}
+.btn.p{background:var(--gold);border-color:var(--gold);color:#1c1a12}.btn.p:hover{background:var(--gold2)}
+.btn.d{border-color:rgba(217,107,107,.5);color:var(--danger)}.btn.d:hover{background:rgba(217,107,107,.12)}
+.btn.sm{padding:4px 9px;font-size:12.5px}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}.btn.ghost:hover{color:var(--text)}
+.btn[disabled]{opacity:.5;cursor:default}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:16px;overflow:auto}
+.tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;cursor:pointer;color:var(--muted);font-weight:500;white-space:nowrap}
+.tabs button.on{color:var(--text);border-bottom-color:var(--gold)}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;font-size:13px}
+.kv dt{color:var(--muted)}.kv dd{margin:0}
+
+/* ── modal / toast ── */
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;place-items:center;z-index:40;padding:20px}
+#modal.on{display:grid}
+#modal .box{background:var(--surface);border:1px solid var(--line2);border-radius:10px;width:min(560px,100%);max-height:90vh;overflow:auto;padding:22px}
+#modal .box.wide{width:min(860px,100%)}
+#modal h2{margin-bottom:14px}
+#modal .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+#toasts{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:60}
+.toast{background:var(--surface2);border:1px solid var(--line2);border-left:3px solid var(--ok);padding:10px 14px;border-radius:var(--r);min-width:260px;max-width:420px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast.err{border-left-color:var(--danger)}.toast.warn{border-left-color:var(--gold)}
+
+/* ── charts ── */
+.chart{width:100%;height:170px;display:block}
+.chart rect{fill:var(--gold)}.chart rect.b{fill:var(--info)}.chart text{fill:var(--dim);font:10.5px var(--mono)}
+.chart line{stroke:var(--line)}
+.bars{display:flex;flex-direction:column;gap:6px}
+.bars div{display:grid;grid-template-columns:130px 1fr 60px;gap:10px;align-items:center;font-size:13px}
+.bars span{height:10px;background:var(--gold);border-radius:3px;min-width:2px}
+.bars small{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+
+/* ── logs ── */
+#logbox{font-family:var(--mono);font-size:12.5px;line-height:1.55;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);height:calc(100vh - 270px);overflow:auto;padding:8px 12px}
+#logbox div{white-space:pre-wrap;word-break:break-word;padding:1px 0;border-bottom:1px solid rgba(255,255,255,.02)}
+#logbox .t{color:var(--dim)}#logbox .lv{display:inline-block;width:52px}
+#logbox .debug .lv{color:var(--dim)}#logbox .info .lv{color:var(--info)}#logbox .warn .lv{color:var(--gold2)}
+#logbox .error .lv{color:var(--danger)}#logbox .chat .lv{color:var(--violet)}
+#logbox .error{background:rgba(217,107,107,.06)}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <form id="loginForm">
+    <h1>DECAY Master</h1>
+    <p>Painel de administração do servidor</p>
+    <div class="f"><label>Endereço do master</label><input type="text" id="loginUrl" placeholder="http://localhost:3000"></div>
+    <div class="f" style="margin-top:10px"><label>Chave de administrador</label><input type="password" id="loginKey" autofocus placeholder="adminKey do master.config.json"></div>
+    <div id="loginErr" class="dangerbox" style="display:none;margin-top:12px"></div>
+    <button class="btn p" style="width:100%;justify-content:center;margin-top:16px">Entrar</button>
+  </form>
+</div>
+
+<div id="app">
+  <div class="brand"><i id="hb"></i><b>DECAY</b><span class="hint">master</span></div>
+  <nav id="nav"></nav>
+  <header>
+    <div class="cmd">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="cmd" type="text" placeholder="Buscar jogador por id, nick, e-mail, device ou pedido…" autocomplete="off">
+      <kbd>/</kbd>
+      <div class="drop" id="cmdDrop"></div>
+    </div>
+    <div class="me"><b id="srvName">—</b> <span id="srvTime"></span></div>
+    <button class="btn ghost sm" id="logout">Sair</button>
+  </header>
+  <main id="main"></main>
+</div>
+
+<div id="modal"><div class="box" id="modalBox"></div></div>
+<div id="toasts"></div>
+
+<script>
+/* ═══════════════════════════════ infra ═══════════════════════════════ */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtN = (n) => Number(n || 0).toLocaleString("pt-BR");
+const fmtBRL = (c) => "R$ " + (Number(c || 0) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+const fmtDT = (s) => s ? new Date(s * 1000).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+const fmtD = (s) => s ? new Date(s * 1000).toLocaleDateString("pt-BR") : "—";
+const ago = (s) => { if (!s) return "—"; const d = Math.floor(Date.now() / 1000) - s; if (d < 60) return `${d}s`; if (d < 3600) return `${Math.floor(d / 60)}min`; if (d < 86400) return `${Math.floor(d / 3600)}h`; return `${Math.floor(d / 86400)}d`; };
+const dur = (s) => { const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d}d ${h}h` : h ? `${h}h ${m}min` : `${m}min`; };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const S = {
+  base: localStorage.getItem("decay.base") || location.origin,
+  key: sessionStorage.getItem("decay.key") || "",
+  timers: [], es: null,
+};
+
+async function api(path, { method = "GET", body, silent } = {}) {
+  const res = await fetch(S.base + "/admin/api" + path, {
+    method,
+    headers: { "Content-Type": "application/json", "X-Admin-Key": S.key },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  let json = null;
+  try { json = await res.json(); } catch { /* vazio */ }
+  if (res.status === 401) { doLogout("Chave recusada pelo servidor."); throw new Error("não autorizado"); }
+  if (!res.ok || (json && json.ok === false)) {
+    const msg = json?.error || `${res.status} ${res.statusText}`;
+    if (!silent) toast(msg, "err");
+    throw new Error(msg);
+  }
+  return json;
+}
+
+function toast(msg, kind = "ok", ms = 3800) {
+  const el = document.createElement("div");
+  el.className = `toast ${kind}`; el.textContent = msg;
+  $("#toasts").appendChild(el);
+  setTimeout(() => el.remove(), ms);
+}
+
+function modal(html, { wide } = {}) {
+  const box = $("#modalBox"); box.className = "box" + (wide ? " wide" : "");
+  box.innerHTML = html; $("#modal").classList.add("on");
+  const first = box.querySelector("input,select,textarea,button"); first && first.focus();
+  return box;
+}
+function closeModal() { $("#modal").classList.remove("on"); $("#modalBox").innerHTML = ""; }
+$("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+
+function confirmar(titulo, texto, { danger, okLabel = "Confirmar", campo } = {}) {
+  return new Promise((resolve) => {
+    const box = modal(`<h2>${esc(titulo)}</h2><p style="color:var(--muted);margin:0">${texto}</p>
+      ${campo ? `<div class="f" style="margin-top:14px"><label>${esc(campo.label)}</label><input type="text" id="cfField" value="${esc(campo.value || "")}" placeholder="${esc(campo.placeholder || "")}"></div>` : ""}
+      <div class="acts"><button class="btn" id="cfNo">Cancelar</button><button class="btn ${danger ? "d" : "p"}" id="cfYes">${esc(okLabel)}</button></div>`);
+    $("#cfNo", box).onclick = () => { closeModal(); resolve(null); };
+    $("#cfYes", box).onclick = () => { const v = campo ? $("#cfField", box).value : true; closeModal(); resolve(v); };
+  });
+}
+
+function bindActions(root) {
+  $$("[data-act]", root).forEach((el) => {
+    el.addEventListener("click", (e) => {
+      const fn = ACTIONS[el.dataset.act];
+      if (fn) { e.preventDefault(); fn(el.dataset, el); }
+    });
+  });
+}
+const ACTIONS = {};
+function goto(hash) { location.hash = hash; }
+
+/* ═══════════════════════════════ login ═══════════════════════════════ */
+$("#loginUrl").value = S.base;
+$("#loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  S.base = $("#loginUrl").value.trim().replace(/\/+$/, "") || location.origin;
+  S.key = $("#loginKey").value.trim();
+  localStorage.setItem("decay.base", S.base);
+  try {
+    const p = await api("/ping", { silent: true });
+    sessionStorage.setItem("decay.key", S.key);
+    entrar(p);
+  } catch (err) {
+    const box = $("#loginErr"); box.style.display = "block";
+    box.textContent = /não autorizado/.test(err.message) ? "Chave inválida." : `Não foi possível conectar: ${err.message}`;
+  }
+});
+function doLogout(msg) {
+  sessionStorage.removeItem("decay.key"); S.key = "";
+  S.timers.forEach(clearInterval); S.timers = []; S.es?.close();
+  $("#app").classList.remove("on"); $("#login").style.display = "grid";
+  if (msg) { const b = $("#loginErr"); b.style.display = "block"; b.textContent = msg; }
+}
+$("#logout").onclick = () => doLogout();
+function entrar(p) {
+  $("#login").style.display = "none"; $("#app").classList.add("on");
+  $("#srvName").textContent = p.serverName;
+  if (p.usingServerKey) toast("adminKey não definida: o painel está usando a serverKey. Defina uma chave separada em Configuração.", "warn", 9000);
+  renderNav(); route();
+  const hb = async () => { try { const x = await api("/ping", { silent: true }); $("#hb").className = ""; $("#srvTime").textContent = new Date(x.time * 1000).toLocaleTimeString("pt-BR"); } catch { $("#hb").className = "off"; } };
+  hb(); S.timers.push(setInterval(hb, 15000));
+}
+if (S.key) api("/ping", { silent: true }).then(entrar).catch(() => doLogout());
+
+/* ═══════════════════════════════ nav / router ═══════════════════════════════ */
+const NAV = [
+  ["Operação", [["overview", "Visão geral"], ["players", "Jogadores"], ["coins", "Moedas"], ["bans", "Banimentos"], ["servers", "Servidores"], ["chat", "Chat e push"]]],
+  ["Loja", [["orders", "Pedidos"], ["reports", "Relatórios"], ["skins", "Skins"], ["packages", "Pacotes DC"]]],
+  ["Sistema", [["config", "Configuração"], ["logs", "Logs"], ["audit", "Auditoria"]]],
+];
+function renderNav() {
+  $("#nav").innerHTML = NAV.map(([g, items]) => `<div class="grp">${g}</div>` + items.map(([id, l]) => `<a href="#/${id}" data-nav="${id}">${l}</a>`).join("")).join("");
+}
+window.addEventListener("hashchange", route);
+function route() {
+  const [, view = "overview", ...rest] = location.hash.replace(/^#\/?/, "").split("/");
+  const parts = location.hash.replace(/^#\/?/, "").split("/");
+  const v = parts[0] || "overview";
+  $$("#nav a").forEach((a) => a.classList.toggle("on", a.dataset.nav === v));
+  S.timers.splice(1).forEach(clearInterval); S.es?.close(); S.es = null;
+  const fn = VIEWS[v] || VIEWS.overview;
+  $("#main").innerHTML = `<p class="hint">Carregando…</p>`;
+  fn(...parts.slice(1)).catch((e) => { $("#main").innerHTML = `<div class="dangerbox">${esc(e.message)}</div>`; });
+}
+const VIEWS = {};
+function setMain(html) { const m = $("#main"); m.innerHTML = html; bindActions(m); return m; }
+
+/* ═══════════════════════════════ busca global ═══════════════════════════════ */
+const cmd = $("#cmd"), drop = $("#cmdDrop");
+let cmdT = null, cmdSel = 0, cmdItems = [];
+document.addEventListener("keydown", (e) => { if (e.key === "/" && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); cmd.focus(); } });
+cmd.addEventListener("input", () => { clearTimeout(cmdT); cmdT = setTimeout(buscarCmd, 220); });
+cmd.addEventListener("blur", () => setTimeout(() => drop.classList.remove("on"), 150));
+cmd.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown") { cmdSel = Math.min(cmdItems.length - 1, cmdSel + 1); paintCmd(); e.preventDefault(); }
+  if (e.key === "ArrowUp") { cmdSel = Math.max(0, cmdSel - 1); paintCmd(); e.preventDefault(); }
+  if (e.key === "Enter" && cmdItems[cmdSel]) { goto(cmdItems[cmdSel].href); drop.classList.remove("on"); cmd.value = ""; }
+});
+async function buscarCmd() {
+  const q = cmd.value.trim(); cmdItems = []; cmdSel = 0;
+  if (q.length < 2) return drop.classList.remove("on");
+  if (/^dc_\d+_/.test(q)) cmdItems.push({ href: `#/orders/mp/${q}`, t: `Pedido MP ${q}`, s: "Mercado Pago" });
+  try {
+    const r = await api(`/players?q=${encodeURIComponent(q)}&limit=8`, { silent: true });
+    for (const p of r.rows) cmdItems.push({ href: `#/players/${p.playerId}`, t: `${p.playerName || "(sem nome)"}`, s: `${p.playerId} · ${p.accountType} · lvl ${p.level}${p.banned ? " · BANIDO" : ""}` });
+  } catch { /* ignora */ }
+  if (!cmdItems.length) cmdItems.push({ href: `#/players/q/${encodeURIComponent(q)}`, t: `Nenhum jogador para "${q}"`, s: "abrir lista" });
+  paintCmd(); drop.classList.add("on");
+}
+function paintCmd() {
+  drop.innerHTML = cmdItems.map((i, k) => `<div class="${k === cmdSel ? "sel" : ""}" data-h="${esc(i.href)}"><span>${esc(i.t)}</span><small>${esc(i.s)}</small></div>`).join("");
+  $$("div", drop).forEach((d) => d.onmousedown = () => { goto(d.dataset.h); cmd.value = ""; });
+}
+
+/* ═══════════════════════════════ componentes ═══════════════════════════════ */
+function stat(l, v, s = "", cls = "") { return `<div class="panel stat ${cls}"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ""}</div>`; }
+function table(cols, rows, { rowAttr, empty = "Nada por aqui." } = {}) {
+  if (!rows.length) return `<div class="empty">${empty}</div>`;
+  return `<div class="tw"><table><thead><tr>${cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.h}</th>`).join("")}</tr></thead>
+  <tbody>${rows.map((r) => `<tr ${rowAttr ? rowAttr(r) : ""}>${cols.map((c) => `<td class="${c.num ? "num" : ""}">${c.f(r)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+}
+function pager(total, limit, offset, act) {
+  const from = total ? offset + 1 : 0, to = Math.min(total, offset + limit);
+  return `<div class="pager"><span>${from}–${to} de ${fmtN(total)}</span><span class="row">
+    <button class="btn sm" data-act="${act}" data-offset="${Math.max(0, offset - limit)}" ${offset === 0 ? "disabled" : ""}>Anterior</button>
+    <button class="btn sm" data-act="${act}" data-offset="${offset + limit}" ${to >= total ? "disabled" : ""}>Próxima</button></span></div>`;
+}
+function playerLink(id, name) { return `<a href="#/players/${id}">${esc(name || "(sem nome)")}</a> <span class="hint mono">${id}</span>`; }
+function statusTag(s) {
+  const m = { approved: "ok", credited: "ok", purchased: "ok", pending: "gold", review: "danger", rejected: "danger", cancelled: "", canceled: "", voided: "danger", expired: "", failed: "danger", refunded: "danger", Online: "ok", Cheio: "gold", Offline: "danger", "Manutenção": "info" };
+  return `<span class="tag ${m[s] ?? ""}">${esc(s)}</span>`;
+}
+function barChart(series, { labelKey = "dia", valKey = "n", series2 } = {}) {
+  if (!series.length) return `<div class="empty">Sem dados no período.</div>`;
+  const W = 640, H = 170, pad = 28, bw = (W - pad) / series.length;
+  const max = Math.max(1, ...series.map((d) => d[valKey]), ...(series2 || []).map((d) => d[valKey]));
+  const idx2 = new Map((series2 || []).map((d) => [d[labelKey], d[valKey]]));
+  const step = Math.max(1, Math.floor(series.length / 8));
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <line x1="${pad}" y1="${H - 20}" x2="${W}" y2="${H - 20}"/>
+    <text x="0" y="12">${fmtN(max)}</text><text x="0" y="${H - 22}">0</text>
+    ${series.map((d, i) => {
+      const v = d[valKey], h = (v / max) * (H - 36), x = pad + i * bw;
+      const v2 = idx2.get(d[labelKey]), h2 = v2 ? (v2 / max) * (H - 36) : 0;
+      return `<rect x="${x + 1}" y="${H - 20 - h}" width="${Math.max(1, bw / (series2 ? 2 : 1) - 2)}" height="${h}"><title>${esc(d[labelKey])}: ${fmtN(v)}</title></rect>
+        ${series2 ? `<rect class="b" x="${x + bw / 2}" y="${H - 20 - h2}" width="${Math.max(1, bw / 2 - 2)}" height="${h2}"><title>${esc(d[labelKey])}: ${fmtN(v2 || 0)}</title></rect>` : ""}
+        ${i % step === 0 ? `<text x="${x}" y="${H - 6}">${esc(String(d[labelKey]).slice(5))}</text>` : ""}`;
+    }).join("")}</svg>`;
+}
+function hbars(rows, lk, vk, fmt = fmtN) {
+  if (!rows.length) return `<div class="empty">Sem dados.</div>`;
+  const max = Math.max(1, ...rows.map((r) => r[vk]));
+  return `<div class="bars">${rows.map((r) => `<div><span class="hint" style="background:none;height:auto;color:var(--text)">${esc(r[lk] ?? "?")}</span><span style="width:${(r[vk] / max) * 100}%"></span><small>${fmt(r[vk])}</small></div>`).join("")}</div>`;
+}
+
+/* ═══════════════════════════════ VISÃO GERAL ═══════════════════════════════ */
+VIEWS.overview = async function () {
+  const o = await api("/overview");
+  const mp = o.vendas.mp, pl = o.vendas.play;
+  setMain(`
+  <div class="top"><div><h1>Visão geral</h1><p>Processo ativo há ${dur(o.uptime)} · ${o.memoriaMB} MB · FCM ${o.fcmEnabled ? "ativo" : "desligado"}</p></div>
+    <div class="row"><a class="btn" href="#/logs">Ver logs</a><button class="btn" data-act="reload">Atualizar</button></div></div>
+  <div class="grid g4">
+    ${stat("Jogadores em servidores", fmtN(o.servidores.players), `${o.servidores.online}/${o.servidores.total} servidores online · ${o.chat.online} no chat`, "ok")}
+    ${stat("Receita 24h (Mercado Pago)", fmtBRL(mp.h24.c), `${mp.h24.n} pedidos · 7d ${fmtBRL(mp.d7.c)} · total ${fmtBRL(mp.total.c)}`, "gold")}
+    ${stat("Compras Play 24h", fmtN(pl.h24.n), `${fmtN(pl.h24.dc)} DC · 7d ${pl.d7.n} compras`, "info")}
+    ${stat("Contas", fmtN(o.contas.total), `${o.contas.emails} e-mail · ${o.contas.guests} guest · +${o.contas.novas24h} hoje`)}
+  </div>
+  <div class="grid g4" style="margin-top:14px">
+    ${stat("DC em circulação", fmtN(o.saldos.dc), `${fmtN(o.saldos.ds)} DS`)}
+    ${stat("Pedidos em revisão", fmtN(o.vendas.review), `${o.vendas.pendentes} pendentes aguardando pagamento`, o.vendas.review ? "danger" : "")}
+    ${stat("Skins vendidas (7d)", fmtN(o.vendas.skinsVendidas7d))}
+    ${stat("Bans ativos", fmtN(o.bans), `${o.push.tokens} tokens push · ${o.push.players} devices`)}
+  </div>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="panel"><div class="ph"><h2>Servidores</h2><a href="#/servers" class="hint">todos</a></div>
+      ${table([
+        { h: "", f: (s) => `<span class="dot ${s.online ? "on" : ""}"></span>` },
+        { h: "Nome", f: (s) => `${esc(s.name)} <span class="hint">${esc(s.region)}</span>` },
+        { h: "Players", f: (s) => `${s.playersOnline}/${s.maxPlayers}`, num: true },
+        { h: "Status", f: (s) => statusTag(s.status) },
+        { h: "Heartbeat", f: (s) => `${ago(s.lastHeartbeatAt)} atrás` },
+      ], o.servidores.lista, { empty: "Nenhum servidor de jogo registrado." })}</div>
+    <div class="panel"><div class="ph"><h2>Movimentações recentes</h2><a href="#/coins" class="hint">ledger</a></div>
+      ${table([
+        { h: "Quando", f: (l) => fmtDT(l.createdAt) },
+        { h: "Jogador", f: (l) => playerLink(l.playerId, l.playerName) },
+        { h: "Δ", f: (l) => `<b style="color:${l.delta >= 0 ? "var(--ok)" : "var(--danger)"}">${l.delta > 0 ? "+" : ""}${fmtN(l.delta)} ${l.currency || "DC"}</b>`, num: true },
+        { h: "Origem", f: (l) => `<span class="tag">${esc(l.source)}</span>` },
+      ], o.ledgerRecente, { empty: "Nenhuma movimentação ainda." })}</div>
+  </div>
+  ${o.play ? `<div class="panel" style="margin-top:14px"><div class="ph"><h2>Google Play Watcher</h2><span class="tag ${o.play.running ? "ok" : ""}">${o.play.running ? "rodando" : "parado"}</span></div>
+    <dl class="kv"><dt>Versão atual</dt><dd class="mono">${esc(o.play.currentVersion)}</dd><dt>Builds aceitas</dt><dd class="mono">${esc(o.play.allowedClientBuilds.join(", "))}</dd>
+    <dt>Último check</dt><dd>${o.play.lastCheckAt ? fmtDT(o.play.lastCheckAt) : "nunca"}${o.play.lastError ? ` <span class="tag danger">${esc(o.play.lastError)}</span>` : ""}</dd></dl></div>` : ""}`);
+  ACTIONS.reload = route;
+  S.timers.push(setInterval(() => { if (location.hash.replace(/^#\/?/, "").startsWith("overview") || !location.hash) route(); }, 30000));
+};
+
+/* ═══════════════════════════════ JOGADORES ═══════════════════════════════ */
+VIEWS.players = async function (sub, arg) {
+  if (sub && /^\d+$/.test(sub)) return playerDetail(Number(sub), arg || "resumo");
+  const st = { q: sub === "q" ? decodeURIComponent(arg || "") : "", type: "", sort: "createdAt", dir: "desc", offset: 0, limit: 50 };
+  async function load() {
+    const r = await api(`/players?q=${encodeURIComponent(st.q)}&type=${st.type}&sort=${st.sort}&dir=${st.dir}&limit=${st.limit}&offset=${st.offset}`);
+    $("#plist").innerHTML = table([
+      { h: "", f: (p) => `<span class="dot ${p.online ? "on" : ""}" title="${p.online ? "no chat" : "offline"}"></span>` },
+      { h: "Jogador", f: (p) => `<b>${esc(p.playerName || "(sem nome)")}</b> ${p.banned ? '<span class="tag danger">banido</span>' : ""}<br><span class="hint mono">${p.playerId}</span>` },
+      { h: "Tipo", f: (p) => `<span class="tag">${p.accountType}</span> ${p.email ? `<span class="hint">${esc(p.email)}</span>` : ""}` },
+      { h: "Nível", f: (p) => `${p.level} <span class="hint">${p.xp} xp</span>`, num: true },
+      { h: "K/D/HS", f: (p) => `${p.kills}/${p.deaths}/${p.headshots}`, num: true },
+      { h: "DC", f: (p) => fmtN(p.balanceDC), num: true },
+      { h: "DS", f: (p) => fmtN(p.balanceDS), num: true },
+      { h: "Criada", f: (p) => fmtD(p.createdAt) },
+    ], r.rows, { rowAttr: (p) => `class="click" data-act="open" data-id="${p.playerId}"`, empty: st.q ? `Nenhum jogador para "${esc(st.q)}".` : "Nenhuma conta." }) + pager(r.total, st.limit, st.offset, "page");
+    bindActions($("#plist"));
+  }
+  setMain(`
+  <div class="top"><div><h1>Jogadores</h1><p>Clique numa linha para abrir a conta.</p></div>
+    <div class="row"><button class="btn p" data-act="new">Criar conta</button></div></div>
+  <div class="row" style="margin-bottom:12px">
+    <input type="text" id="pq" class="sm" style="width:300px" placeholder="id, nick, e-mail ou deviceId" value="${esc(st.q)}">
+    <select id="ptype" class="sm"><option value="">Todos os tipos</option><option value="email">E-mail</option><option value="guest">Guest</option></select>
+    <select id="psort" class="sm"><option value="createdAt">Mais recentes</option><option value="level">Maior nível</option><option value="kills">Mais kills</option><option value="balanceDC">Mais DC</option><option value="balanceDS">Mais DS</option><option value="playerName">Nome</option></select>
+  </div><div id="plist"></div>`);
+  $("#pq").oninput = () => { clearTimeout(st.t); st.t = setTimeout(() => { st.q = $("#pq").value.trim(); st.offset = 0; load(); }, 250); };
+  $("#ptype").onchange = (e) => { st.type = e.target.value; st.offset = 0; load(); };
+  $("#psort").onchange = (e) => { st.sort = e.target.value; st.dir = e.target.value === "playerName" ? "asc" : "desc"; st.offset = 0; load(); };
+  ACTIONS.page = (d) => { st.offset = Number(d.offset); load(); };
+  ACTIONS.open = (d) => goto(`#/players/${d.id}`);
+  ACTIONS.new = criarConta;
+  await load();
+};
+
+function criarConta() {
+  const box = modal(`<h2>Criar conta</h2>
+    <div class="grid g2">
+      <div class="f"><label>Tipo</label><select id="cType"><option value="guest">Guest (por deviceId)</option><option value="email">E-mail e senha</option></select></div>
+      <div class="f"><label>Nick (opcional)</label><input type="text" id="cName" placeholder="3-20 letras, números, _"></div>
+      <div class="f" id="fEmail" style="display:none"><label>E-mail</label><input type="email" id="cEmail"></div>
+      <div class="f" id="fPass" style="display:none"><label>Senha</label><input type="text" id="cPass" placeholder="mín. 6"></div>
+      <div class="f"><label>Device ID (opcional)</label><input type="text" id="cDev" placeholder="gerado automaticamente se vazio"></div>
+      <div class="f"><label>Nível inicial</label><input type="number" id="cLevel" value="1" min="1"></div>
+      <div class="f"><label>Saldo DC</label><input type="number" id="cDC" value="0"></div>
+      <div class="f"><label>Saldo DS</label><input type="number" id="cDS" value="0"></div>
+    </div>
+    <div class="acts"><button class="btn" data-x>Cancelar</button><button class="btn p" id="cGo">Criar conta</button></div>`);
+  $("[data-x]", box).onclick = closeModal;
+  $("#cType", box).onchange = (e) => { const em = e.target.value === "email"; $("#fEmail", box).style.display = $("#fPass", box).style.display = em ? "" : "none"; };
+  $("#cGo", box).onclick = async () => {
+    const body = { accountType: $("#cType", box).value, email: $("#cEmail", box).value.trim(), password: $("#cPass", box).value, deviceId: $("#cDev", box).value.trim() || undefined, playerName: $("#cName", box).value.trim() || undefined, level: +$("#cLevel", box).value, balanceDC: +$("#cDC", box).value, balanceDS: +$("#cDS", box).value };
+    const r = await api("/players", { method: "POST", body });
+    closeModal(); toast(`Conta ${r.playerId} criada.`); goto(`#/players/${r.playerId}`);
+  };
+}
+
+async function playerDetail(id, tab = "resumo") {
+  const d = await api(`/players/${id}`);
+  const a = d.account;
+  const TABS = [["resumo", "Resumo"], ["saldo", "Moedas"], ["skins", `Skins (${d.skins.length})`], ["pedidos", `Pedidos (${d.ordersMp.length + d.ordersPlay.length})`], ["ledger", `Ledger (${d.ledger.length})`], ["devices", `Dispositivos (${d.fingerprints.length})`], ["acesso", "Acesso"]];
+  let body = "";
+  if (tab === "resumo") body = `<div class="grid g2">
+    <div class="panel"><h2>Conta</h2><dl class="kv">
+      <dt>playerId</dt><dd class="mono">${a.playerId}</dd><dt>Nick</dt><dd>${esc(a.playerName || "—")}</dd>
+      <dt>Tipo</dt><dd>${a.accountType}${a.email ? ` · ${esc(a.email)}` : ""}</dd>
+      ${a.guestDeviceId ? `<dt>Guest device</dt><dd class="mono">${esc(a.guestDeviceId)}</dd>` : ""}
+      <dt>Criada</dt><dd>${fmtDT(a.createdAt)}</dd><dt>Chat</dt><dd>${a.online ? '<span class="tag ok">online</span>' : "offline"}</dd>
+      <dt>Push</dt><dd>${d.pushTokens.length} token(s) ${d.pushTokens.map((t) => `<span class="tag">${esc(t.platform || "?")} ${esc(t.model || "")}</span>`).join(" ")}</dd></dl>
+      <div class="row" style="margin-top:14px"><button class="btn" data-act="edit">Editar dados</button><button class="btn" data-act="kick">Desconectar do chat</button></div></div>
+    <div class="panel"><h2>Progresso</h2><dl class="kv">
+      <dt>Nível</dt><dd>${a.level} <span class="hint">(${a.xp}/${a.xpToNextLevel} xp)</span></dd>
+      <dt>Kills / Deaths</dt><dd>${a.kills} / ${a.deaths} <span class="hint">KD ${(a.kills / Math.max(1, a.deaths)).toFixed(2)}</span></dd>
+      <dt>Headshots</dt><dd>${a.headshots}</dd>
+      <dt>Saldo</dt><dd><b style="color:var(--gold2)">${fmtN(a.balanceDC)} DC</b> · ${fmtN(a.balanceDS)} DS</dd>
+      <dt>Equipado</dt><dd>${d.equipped.length ? d.equipped.map((e) => `<span class="tag">${esc(e.slotKey)}: ${e.skinId}</span>`).join(" ") : "—"}</dd></dl></div>
+    ${d.bans.length ? `<div class="panel" style="grid-column:1/-1"><h2>Histórico de bans</h2>${table([
+      { h: "Status", f: (b) => `<span class="tag ${b.active ? "danger" : ""}">${b.active ? "ativo" : "removido"}</span>` }, { h: "Motivo", f: (b) => esc(b.reason) }, { h: "Por", f: (b) => esc(b.admin) },
+      { h: "Devices/HW/IPs", f: (b) => `${b.deviceIds.length}/${b.hardwareIds.length}/${b.ips.length}` }, { h: "Quando", f: (b) => fmtDT(b.createdAt) }], d.bans)}</div>` : ""}</div>`;
+  if (tab === "saldo") body = `<div class="grid g2">
+    <div class="panel"><h2>Ajustar saldo</h2><p class="hint" style="margin:0 0 12px">Positivo credita, negativo debita. Fica registrado no ledger com origem <code>admin</code>.</p>
+      <div class="grid g2"><div class="f"><label>Moeda</label><select id="ajCur"><option>DC</option><option>DS</option></select></div><div class="f"><label>Quantidade (±)</label><input type="number" id="ajDelta" placeholder="ex.: 500 ou -200"></div></div>
+      <div class="f" style="margin-top:10px"><label>Motivo</label><input type="text" id="ajReason" placeholder="ex.: compensação bug #42"></div>
+      <label class="check" style="margin-top:10px"><input type="checkbox" id="ajNeg"> Permitir saldo negativo</label>
+      <div class="row" style="margin-top:14px"><button class="btn p" data-act="adjust">Aplicar</button></div></div>
+    <div class="panel"><h2>Transferir para outro jogador</h2>
+      <div class="grid g2"><div class="f"><label>Moeda</label><select id="trCur"><option>DC</option><option>DS</option></select></div><div class="f"><label>Quantidade</label><input type="number" id="trAmt" min="1"></div></div>
+      <div class="f" style="margin-top:10px"><label>playerId de destino</label><input type="text" id="trTo" placeholder="8 dígitos"></div>
+      <div class="f" style="margin-top:10px"><label>Motivo</label><input type="text" id="trReason"></div>
+      <div class="row" style="margin-top:14px"><button class="btn p" data-act="transfer">Transferir</button></div></div></div>`;
+  if (tab === "skins") body = `<div class="panel"><div class="ph"><h2>Skins possuídas</h2><div class="row"><input type="number" id="gSkin" class="sm" placeholder="skinId" style="width:110px"><button class="btn sm p" data-act="grant">Conceder</button></div></div>
+    ${table([{ h: "skinId", f: (s) => `<b class="mono">${s.skinId}</b>` }, { h: "Equipada", f: (s) => d.equipped.find((e) => e.skinId === s.skinId) ? `<span class="tag gold">${esc(d.equipped.find((e) => e.skinId === s.skinId).slotKey)}</span>` : "" },
+      { h: "Adquirida", f: (s) => fmtDT(s.acquiredAt) }, { h: "Expira", f: (s) => s.expiresAt ? fmtDT(s.expiresAt) : "nunca" },
+      { h: "", f: (s) => `<button class="btn sm d" data-act="rmskin" data-skin="${s.skinId}">Remover</button>` }], d.skins, { empty: "Nenhuma skin." })}</div>`;
+  if (tab === "pedidos") body = `<div class="panel"><h2>Mercado Pago</h2>${table([
+      { h: "Pedido", f: (o) => `<a href="#/orders/mp/${o.orderId}" class="mono">${o.orderId}</a>` }, { h: "Pacote", f: (o) => `${esc(o.packageId)} <span class="hint">${o.amountDC + o.bonusDC} DC</span>` },
+      { h: "Valor", f: (o) => fmtBRL(o.priceCents), num: true }, { h: "Status", f: (o) => statusTag(o.status) }, { h: "Método", f: (o) => esc(o.paymentMethod || "—") },
+      { h: "Criado", f: (o) => fmtDT(o.createdAt) }, { h: "Creditado", f: (o) => fmtDT(o.creditedAt) }], d.ordersMp, { empty: "Nenhum pedido MP." })}
+    <h2 style="margin:18px 0 12px">Google Play</h2>${table([
+      { h: "Token", f: (o) => `<span class="mono" title="${esc(o.purchaseToken)}">${esc(o.purchaseToken.slice(0, 18))}…</span>` }, { h: "Produto", f: (o) => `${esc(o.productId)} ×${o.quantity}` },
+      { h: "DC", f: (o) => fmtN(o.totalDC), num: true }, { h: "Status", f: (o) => statusTag(o.status) }, { h: "Ack", f: (o) => o.acknowledged ? "sim" : '<span class="tag gold">não</span>' },
+      { h: "Criado", f: (o) => fmtDT(o.createdAt) }, { h: "", f: (o) => o.creditedAt && !o.voidedAt ? `<button class="btn sm d" data-act="revokeplay" data-token="${esc(o.purchaseToken)}">Estornar</button>` : "" }], d.ordersPlay, { empty: "Nenhuma compra Play." })}</div>`;
+  if (tab === "ledger") body = `<div class="panel"><h2>Ledger de moedas</h2>${table([
+      { h: "Quando", f: (l) => fmtDT(l.createdAt) }, { h: "Δ", f: (l) => `<b style="color:${l.delta >= 0 ? "var(--ok)" : "var(--danger)"}">${l.delta > 0 ? "+" : ""}${fmtN(l.delta)} ${l.currency || "DC"}</b>`, num: true },
+      { h: "Saldo após", f: (l) => fmtN(l.balance), num: true }, { h: "Origem", f: (l) => `<span class="tag">${esc(l.source)}</span>` }, { h: "Ref / motivo", f: (l) => `<span class="mono">${esc(l.refId || "—")}</span>` }], d.ledger, { empty: "Sem movimentações." })}</div>`;
+  if (tab === "devices") body = `<div class="panel"><h2>Dispositivos vistos</h2><p class="hint" style="margin:0 0 12px">Ao banir, todos estes device/hardware IDs e IPs entram na lista de bloqueio.</p>${table([
+      { h: "Plataforma", f: (f) => `${esc(f.platform || "?")} <span class="hint">${esc(f.model || "")}</span>` }, { h: "deviceId", f: (f) => `<span class="mono">${esc(f.deviceId || "—")}</span>` },
+      { h: "hardwareId", f: (f) => `<span class="mono">${esc(f.hardwareId || "—")}</span>` }, { h: "Último IP", f: (f) => `<span class="mono">${esc(f.ip || "—")}</span>` },
+      { h: "Vezes", f: (f) => f.seenCount, num: true }, { h: "Primeiro", f: (f) => fmtDT(f.firstSeen) }, { h: "Último", f: (f) => fmtDT(f.lastSeen) }], d.fingerprints, { empty: "Nenhum fingerprint registrado (o jogador nunca logou por esta versão do cliente)." })}</div>`;
+  if (tab === "acesso") body = `<div class="grid g2">
+    <div class="panel"><h2>Sessões ativas</h2>${table([{ h: "Sessão", f: (s) => `<span class="mono">${esc(s.sessionId.slice(0, 8))}…</span>` }, { h: "Device", f: (s) => `<span class="mono">${esc(s.deviceId)}</span>` }, { h: "Criada", f: (s) => fmtDT(s.createdAt) }, { h: "Expira", f: (s) => fmtDT(s.expiresAt) }], d.sessions, { empty: "Nenhuma sessão." })}
+      <div class="row" style="margin-top:12px"><button class="btn" data-act="revoke">Encerrar todas as sessões</button></div></div>
+    <div class="panel"><h2>Ações críticas</h2>
+      <div class="row" style="margin-bottom:12px">${a.banned ? `<button class="btn" data-act="unban">Remover banimento</button>` : `<button class="btn d" data-act="ban">Banir jogador</button>`}</div>
+      <div class="dangerbox">Excluir a conta remove sessões, skins e o registro. Pedidos e ledger ficam guardados como histórico financeiro.</div>
+      <div class="row" style="margin-top:12px"><button class="btn d" data-act="delete">Excluir conta</button></div></div></div>`;
+
+  setMain(`
+  <div class="top"><div><a href="#/players" class="hint">← Jogadores</a><h1>${esc(a.playerName || "(sem nome)")} <span class="hint mono" style="font-size:16px;font-weight:400">${a.playerId}</span></h1>
+    <p>${a.accountType} · nível ${a.level} · ${fmtN(a.balanceDC)} DC · ${fmtN(a.balanceDS)} DS ${a.banned ? '· <span class="tag danger">BANIDO</span>' : ""} ${a.online ? '· <span class="tag ok">no chat</span>' : ""}</p></div>
+    <div class="row">${a.banned ? `<button class="btn" data-act="unban">Desbanir</button>` : `<button class="btn d" data-act="ban">Banir</button>`}<button class="btn p" data-act="tab" data-tab="saldo">Ajustar moedas</button></div></div>
+  <div class="tabs">${TABS.map(([k, l]) => `<button class="${k === tab ? "on" : ""}" data-act="tab" data-tab="${k}">${l}</button>`).join("")}</div>${body}`);
+
+  const reload = (t = tab) => { history.replaceState(null, "", `#/players/${id}/${t}`); return playerDetail(id, t); };
+  ACTIONS.tab = (d) => reload(d.tab);
+  ACTIONS.kick = async () => { await api(`/players/${id}/kick`, { method: "POST", body: {} }); toast("Desconectado do chat."); };
+  ACTIONS.revoke = async () => { if (await confirmar("Encerrar sessões", "O jogador precisará fazer login de novo em todos os aparelhos.")) { const r = await api(`/players/${id}/sessions/revoke`, { method: "POST", body: {} }); toast(`${r.removidas} sessão(ões) encerrada(s).`); reload(); } };
+  ACTIONS.ban = async () => { const m = await confirmar("Banir jogador", `Bloqueia a conta e todos os ${d.fingerprints.length} dispositivo(s)/IP(s) conhecidos.`, { danger: true, okLabel: "Banir", campo: { label: "Motivo", placeholder: "ex.: cheat, chargeback" } }); if (m !== null) { await api("/bans", { method: "POST", body: { playerId: id, reason: m } }); toast("Jogador banido."); reload(); } };
+  ACTIONS.unban = async () => { await api(`/bans/${id}`, { method: "DELETE" }); toast("Banimento removido."); reload(); };
+  ACTIONS.delete = async () => { const v = await confirmar("Excluir conta", `Digite <b>${a.playerId}</b> para confirmar. Esta ação não pode ser desfeita.`, { danger: true, okLabel: "Excluir", campo: { label: "playerId" } }); if (v === String(a.playerId)) { await api(`/players/${id}`, { method: "DELETE" }); toast("Conta excluída."); goto("#/players"); } else if (v !== null) toast("playerId não confere.", "warn"); };
+  ACTIONS.adjust = async () => { const delta = +$("#ajDelta").value; if (!delta) return toast("Informe a quantidade.", "warn"); const r = await api("/coins/adjust", { method: "POST", body: { playerId: id, currency: $("#ajCur").value, delta, reason: $("#ajReason").value, allowNegative: $("#ajNeg").checked } }); toast(`Saldo ${r.currency}: ${fmtN(r.balance)}`); reload(); };
+  ACTIONS.transfer = async () => { const r = await api("/coins/transfer", { method: "POST", body: { fromPlayerId: id, toPlayerId: +$("#trTo").value, currency: $("#trCur").value, amount: +$("#trAmt").value, reason: $("#trReason").value } }); toast(`Transferido. Saldo agora ${fmtN(r.balances.from)}.`); reload(); };
+  ACTIONS.grant = async () => { const skinId = +$("#gSkin").value; if (!skinId) return; const r = await api(`/players/${id}/skins`, { method: "POST", body: { skinId } }); toast(r.jaPossuia ? "Já possuía." : "Skin concedida."); reload(); };
+  ACTIONS.rmskin = async (dd) => { await api(`/players/${id}/skins/${dd.skin}`, { method: "DELETE" }); toast("Skin removida."); reload(); };
+  ACTIONS.revokeplay = async (dd) => { if (await confirmar("Estornar compra Play", "Debita o DC creditado (sem deixar saldo negativo) e marca a compra como anulada.", { danger: true, okLabel: "Estornar" })) { await api(`/orders/play/${encodeURIComponent(dd.token)}/revoke`, { method: "POST", body: {} }); toast("Compra estornada."); reload(); } };
+  ACTIONS.edit = () => {
+    const box = modal(`<h2>Editar conta ${a.playerId}</h2><div class="grid g2">
+      <div class="f"><label>Nick</label><input type="text" id="eName" value="${esc(a.playerName || "")}"></div>
+      ${a.accountType === "email" ? `<div class="f"><label>E-mail</label><input type="email" id="eEmail" value="${esc(a.email || "")}"></div><div class="f"><label>Nova senha (deixe vazio para manter)</label><input type="text" id="ePass"></div>` : "<div></div>"}
+      <div class="f"><label>Nível</label><input type="number" id="eLevel" value="${a.level}" min="1"></div><div class="f"><label>XP</label><input type="number" id="eXp" value="${a.xp}" min="0"></div>
+      <div class="f"><label>Kills</label><input type="number" id="eK" value="${a.kills}" min="0"></div><div class="f"><label>Deaths</label><input type="number" id="eD" value="${a.deaths}" min="0"></div><div class="f"><label>Headshots</label><input type="number" id="eH" value="${a.headshots}" min="0"></div></div>
+      <div class="acts"><button class="btn" data-x>Cancelar</button><button class="btn p" id="eGo">Salvar alterações</button></div>`);
+    $("[data-x]", box).onclick = closeModal;
+    $("#eGo", box).onclick = async () => {
+      const body = { playerName: $("#eName", box).value.trim(), level: +$("#eLevel", box).value, xp: +$("#eXp", box).value, kills: +$("#eK", box).value, deaths: +$("#eD", box).value, headshots: +$("#eH", box).value };
+      if ($("#eEmail", box)) body.email = $("#eEmail", box).value.trim();
+      if ($("#ePass", box)?.value) body.password = $("#ePass", box).value;
+      await api(`/players/${id}`, { method: "PATCH", body }); closeModal(); toast("Alterações salvas."); reload();
+    };
+  };
+}
+
+/* ═══════════════════════════════ MOEDAS ═══════════════════════════════ */
+VIEWS.coins = async function () {
+  const st = { playerId: "", source: "", currency: "", offset: 0, limit: 100 };
+  async function load() {
+    const r = await api(`/coins/ledger?playerId=${st.playerId}&source=${st.source}&currency=${st.currency}&limit=${st.limit}&offset=${st.offset}`);
+    $("#ledger").innerHTML = table([
+      { h: "Quando", f: (l) => fmtDT(l.createdAt) }, { h: "Jogador", f: (l) => playerLink(l.playerId, l.playerName) },
+      { h: "Δ", f: (l) => `<b style="color:${l.delta >= 0 ? "var(--ok)" : "var(--danger)"}">${l.delta > 0 ? "+" : ""}${fmtN(l.delta)} ${l.currency || "DC"}</b>`, num: true },
+      { h: "Saldo após", f: (l) => fmtN(l.balance), num: true }, { h: "Origem", f: (l) => `<span class="tag">${esc(l.source)}</span>` }, { h: "Ref / motivo", f: (l) => `<span class="mono">${esc(l.refId || "—")}</span>` },
+    ], r.rows) + pager(r.total, st.limit, st.offset, "page");
+    bindActions($("#ledger"));
+  }
+  setMain(`<div class="top"><div><h1>Moedas</h1><p>Ajustes, transferências e o ledger completo de DC e DS.</p></div></div>
+  <div class="grid g2" style="margin-bottom:14px">
+    <div class="panel"><h2>Ajustar saldo</h2><div class="grid g3">
+      <div class="f"><label>playerId</label><input type="text" id="aId"></div><div class="f"><label>Moeda</label><select id="aCur"><option>DC</option><option>DS</option></select></div><div class="f"><label>Quantidade (±)</label><input type="number" id="aDelta"></div></div>
+      <div class="f" style="margin-top:10px"><label>Motivo</label><input type="text" id="aReason"></div>
+      <div class="row" style="margin-top:12px"><label class="check"><input type="checkbox" id="aNeg"> Permitir negativo</label><button class="btn p" data-act="adjust" style="margin-left:auto">Aplicar</button></div></div>
+    <div class="panel"><h2>Transferir entre contas</h2><div class="grid g3">
+      <div class="f"><label>De (playerId)</label><input type="text" id="tFrom"></div><div class="f"><label>Para (playerId)</label><input type="text" id="tTo"></div><div class="f"><label>Moeda</label><select id="tCur"><option>DC</option><option>DS</option></select></div></div>
+      <div class="grid g2" style="margin-top:10px"><div class="f"><label>Quantidade</label><input type="number" id="tAmt" min="1"></div><div class="f"><label>Motivo</label><input type="text" id="tReason"></div></div>
+      <div class="row" style="margin-top:12px"><button class="btn p" data-act="transfer" style="margin-left:auto">Transferir</button></div></div></div>
+  <div class="panel"><div class="ph"><h2>Ledger</h2><div class="row">
+    <input type="text" id="lId" class="sm" placeholder="playerId" style="width:120px"><select id="lSrc" class="sm"><option value="">Toda origem</option><option>mercadopago</option><option>googleplay</option><option>googleplay_refund</option><option>admin</option></select>
+    <select id="lCur" class="sm"><option value="">DC e DS</option><option>DC</option><option>DS</option></select></div></div><div id="ledger"></div></div>`);
+  $("#lId").oninput = () => { st.playerId = $("#lId").value.trim(); st.offset = 0; load(); };
+  $("#lSrc").onchange = (e) => { st.source = e.target.value; st.offset = 0; load(); };
+  $("#lCur").onchange = (e) => { st.currency = e.target.value; st.offset = 0; load(); };
+  ACTIONS.page = (d) => { st.offset = Number(d.offset); load(); };
+  ACTIONS.adjust = async () => { const r = await api("/coins/adjust", { method: "POST", body: { playerId: +$("#aId").value, currency: $("#aCur").value, delta: +$("#aDelta").value, reason: $("#aReason").value, allowNegative: $("#aNeg").checked } }); toast(`Player ${r.playerId}: saldo ${r.currency} agora ${fmtN(r.balance)}`); load(); };
+  ACTIONS.transfer = async () => { await api("/coins/transfer", { method: "POST", body: { fromPlayerId: +$("#tFrom").value, toPlayerId: +$("#tTo").value, currency: $("#tCur").value, amount: +$("#tAmt").value, reason: $("#tReason").value } }); toast("Transferência concluída."); load(); };
+  await load();
+};
+
+/* ═══════════════════════════════ BANIMENTOS ═══════════════════════════════ */
+VIEWS.bans = async function () {
+  let all = false;
+  async function load() {
+    const [r, s] = await Promise.all([api(`/bans?all=${all ? 1 : 0}`), api("/bans/settings")]);
+    $("#banIp").checked = s.banByIp;
+    $("#blist").innerHTML = table([
+      { h: "Status", f: (b) => `<span class="tag ${b.active ? "danger" : ""}">${b.active ? "ativo" : "removido"}</span>` },
+      { h: "Jogador", f: (b) => playerLink(b.playerId, b.playerName) }, { h: "Motivo", f: (b) => esc(b.reason) }, { h: "Por", f: (b) => esc(b.admin) },
+      { h: "Devices", f: (b) => b.deviceIds.length, num: true }, { h: "Hardware", f: (b) => b.hardwareIds.length, num: true }, { h: "IPs", f: (b) => b.ips.length, num: true },
+      { h: "Quando", f: (b) => fmtDT(b.createdAt) },
+      { h: "", f: (b) => `<button class="btn sm" data-act="edit" data-ban="${esc(b.banId)}">Detalhes</button> ${b.active ? `<button class="btn sm" data-act="unban" data-id="${b.playerId}">Desbanir</button>` : ""}` },
+    ], r.bans, { empty: "Nenhum banimento." });
+    bindActions($("#blist"));
+    S._bans = r.bans;
+  }
+  setMain(`<div class="top"><div><h1>Banimentos</h1><p>Um ban bloqueia login por conta, deviceId, hardwareId e (opcionalmente) IP.</p></div>
+    <div class="row"><label class="check"><input type="checkbox" id="banIp"> Bloquear também por IP</label><label class="check"><input type="checkbox" id="banAll"> Mostrar removidos</label><button class="btn d" data-act="new">Banir por playerId</button></div></div>
+    <div class="warnbox" style="margin-bottom:12px">Ban por IP pega jogadores atrás do mesmo NAT (escola, faculdade, casa). Se um inocente reclamar, abra o ban em "Detalhes" e remova o IP da lista.</div>
+    <div id="blist"></div>`);
+  $("#banAll").onchange = (e) => { all = e.target.checked; load(); };
+  $("#banIp").onchange = async (e) => { await api("/bans/settings", { method: "PUT", body: { banByIp: e.target.checked } }); toast(e.target.checked ? "Ban por IP ativado." : "Ban por IP desativado (até reiniciar)."); };
+  ACTIONS.new = async () => { const v = await confirmar("Banir jogador", "Informe o playerId. O motivo pode ser adicionado nos detalhes.", { danger: true, okLabel: "Banir", campo: { label: "playerId" } }); if (v) { await api("/bans", { method: "POST", body: { playerId: +v, reason: "Banido pelo painel" } }); toast("Banido."); load(); } };
+  ACTIONS.unban = async (d) => { await api(`/bans/${d.id}`, { method: "DELETE" }); toast("Banimento removido."); load(); };
+  ACTIONS.edit = (d) => {
+    const b = S._bans.find((x) => x.banId === d.ban);
+    const box = modal(`<h2>Ban de ${esc(b.playerName || b.playerId)}</h2>
+      <div class="f"><label>Motivo</label><input type="text" id="bReason" value="${esc(b.reason)}"></div>
+      <div class="grid g3" style="margin-top:10px">
+        <div class="f"><label>Device IDs (um por linha)</label><textarea id="bDev" class="code" style="min-height:120px">${esc(b.deviceIds.join("\n"))}</textarea></div>
+        <div class="f"><label>Hardware IDs</label><textarea id="bHw" class="code" style="min-height:120px">${esc(b.hardwareIds.join("\n"))}</textarea></div>
+        <div class="f"><label>IPs</label><textarea id="bIp" class="code" style="min-height:120px">${esc(b.ips.join("\n"))}</textarea></div></div>
+      <div class="acts"><button class="btn" data-x>Cancelar</button><button class="btn p" id="bGo">Salvar</button></div>`, { wide: true });
+    $("[data-x]", box).onclick = closeModal;
+    const lines = (id) => $(id, box).value.split("\n").map((s) => s.trim()).filter(Boolean);
+    $("#bGo", box).onclick = async () => { await api(`/bans/${encodeURIComponent(b.banId)}`, { method: "PATCH", body: { reason: $("#bReason", box).value, deviceIds: lines("#bDev"), hardwareIds: lines("#bHw"), ips: lines("#bIp") } }); closeModal(); toast("Ban atualizado."); load(); };
+  };
+  await load();
+};
+
+/* ═══════════════════════════════ SERVIDORES ═══════════════════════════════ */
+VIEWS.servers = async function () {
+  async function load() {
+    const r = await api("/servers");
+    $("#slist").innerHTML = `<p class="hint" style="margin:0 0 10px">${r.rows.filter((s) => s.online).length} online · TTL do heartbeat ${r.heartbeatTTL}s · ${r.tokensAtivos} join tokens pendentes</p>` + table([
+      { h: "", f: (s) => `<span class="dot ${s.online ? "on" : ""}"></span>` },
+      { h: "Servidor", f: (s) => `<b>${esc(s.name)}</b><br><span class="hint mono">${esc(s.serverId)}</span>` },
+      { h: "Endereço", f: (s) => `<span class="mono">${esc(s.ip)}:${s.port}</span>` }, { h: "Região", f: (s) => esc(s.region) }, { h: "Tipo", f: (s) => `<span class="tag">${esc(s.serverType)}</span>` },
+      { h: "Players", f: (s) => `${s.playersOnline}/${s.maxPlayers}`, num: true }, { h: "Status", f: (s) => statusTag(s.status) }, { h: "Build", f: (s) => `<span class="mono">${esc(s.buildVersion)}</span>` },
+      { h: "Latência", f: (s) => s.latencyMs != null ? `${s.latencyMs} ms` : "—", num: true }, { h: "Wipe", f: (s) => s.wipeDate ? esc(String(s.wipeDate).slice(0, 10)) : "—" },
+      { h: "Heartbeat", f: (s) => `${ago(s.lastHeartbeatAt)} atrás` },
+      { h: "", f: (s) => `<button class="btn sm" data-act="edit" data-id="${esc(s.serverId)}">Editar</button> <button class="btn sm d" data-act="rm" data-id="${esc(s.serverId)}">Remover</button>` },
+    ], r.rows, { empty: "Nenhum servidor de jogo registrado. Eles aparecem aqui após chamar /servers/register." });
+    bindActions($("#slist")); S._servers = r.rows;
+  }
+  setMain(`<div class="top"><div><h1>Servidores de jogo</h1><p>Registrados no master. Servidores sem heartbeat dentro do TTL somem da lista pública e são limpos a cada 20 min.</p></div><button class="btn" data-act="reload">Atualizar</button></div><div id="slist"></div>`);
+  ACTIONS.reload = load;
+  ACTIONS.rm = async (d) => { if (await confirmar("Remover servidor", `Remove <b>${esc(d.id)}</b> da lista. Ele volta sozinho se registrar de novo.`, { danger: true, okLabel: "Remover" })) { await api(`/servers/${encodeURIComponent(d.id)}`, { method: "DELETE" }); toast("Removido."); load(); } };
+  ACTIONS.edit = (d) => {
+    const s = S._servers.find((x) => x.serverId === d.id);
+    const box = modal(`<h2>${esc(s.name)}</h2><div class="grid g2">
+      <div class="f"><label>Nome</label><input type="text" id="sName" value="${esc(s.name)}"></div>
+      <div class="f"><label>Status (forçar)</label><select id="sStatus">${["Online", "Cheio", "Offline", "Manutenção"].map((x) => `<option ${x === s.status ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+      <div class="f"><label>Máx. players</label><input type="number" id="sMax" value="${s.maxPlayers}"></div><div class="f"><label>Região</label><input type="text" id="sRegion" value="${esc(s.region)}"></div>
+      <div class="f"><label>Wipe (ISO-8601)</label><input type="text" id="sWipe" value="${esc(s.wipeDate || "")}" placeholder="2026-10-01T00:00:00Z"></div><div class="f"><label>Discord</label><input type="text" id="sDisc" value="${esc(s.discordUrl || "")}"></div></div>
+      <div class="f" style="margin-top:10px"><label>Descrição</label><textarea id="sDesc">${esc(s.description || "")}</textarea></div>
+      <p class="hint">O próximo heartbeat do servidor sobrescreve status e contagem de players; nome/descrição/wipe são sobrescritos no próximo register.</p>
+      <div class="acts"><button class="btn" data-x>Cancelar</button><button class="btn p" id="sGo">Salvar</button></div>`);
+    $("[data-x]", box).onclick = closeModal;
+    $("#sGo", box).onclick = async () => { await api(`/servers/${encodeURIComponent(s.serverId)}`, { method: "PATCH", body: { name: $("#sName", box).value, status: $("#sStatus", box).value, maxPlayers: +$("#sMax", box).value, region: $("#sRegion", box).value, wipeDate: $("#sWipe", box).value || null, discordUrl: $("#sDisc", box).value || null, description: $("#sDesc", box).value || null } }); closeModal(); toast("Servidor atualizado."); load(); };
+  };
+  await load(); S.timers.push(setInterval(load, 15000));
+};
+
+/* ═══════════════════════════════ CHAT E PUSH ═══════════════════════════════ */
+VIEWS.chat = async function () {
+  const [on, ps] = await Promise.all([api("/chat/online"), api("/push/stats")]);
+  setMain(`<div class="top"><div><h1>Chat e notificações</h1><p>${on.rows.length} jogador(es) no chat global · ${ps.tokens} tokens push em ${ps.players} jogadores · FCM ${ps.fcmEnabled ? (ps.dryRun ? "em dry-run" : "ativo") : "desligado (log-only)"}</p></div></div>
+  <div class="grid g3">
+    <div class="panel"><h2>Mensagem no chat</h2><p class="hint" style="margin:0 0 10px">Entregue agora a todos os conectados ao chat global.</p>
+      <div class="f"><label>Assinatura</label><input type="text" id="cAs" value="[ADMIN]"></div><div class="f" style="margin-top:8px"><label>Texto (até 200)</label><textarea id="cText" maxlength="200"></textarea></div>
+      <div class="row" style="margin-top:12px"><button class="btn p" data-act="bcast">Enviar no chat</button></div></div>
+    <div class="panel"><h2>Notificação push</h2><p class="hint" style="margin:0 0 10px">Via FCM. Chega mesmo com o jogo fechado.</p>
+      <div class="f"><label>Destino</label><select id="pTo"><option value="all">Todos os dispositivos (${ps.tokens})</option><option value="one">Um jogador</option></select></div>
+      <div class="f" style="margin-top:8px;display:none" id="pIdWrap"><label>playerId</label><input type="text" id="pId"></div>
+      <div class="f" style="margin-top:8px"><label>Título</label><input type="text" id="pTitle" maxlength="60"></div><div class="f" style="margin-top:8px"><label>Corpo</label><textarea id="pBody" maxlength="180"></textarea></div>
+      <div class="row" style="margin-top:12px"><label class="check"><input type="checkbox" id="pHigh"> Prioridade alta</label><button class="btn p" data-act="push" style="margin-left:auto">Enviar push</button></div></div>
+    <div class="panel"><h2>Saúde do push</h2><dl class="kv">
+      <dt>Ativos 24h</dt><dd>${fmtN(ps.ativos24h)}</dd><dt>Inativos +7d</dt><dd>${fmtN(ps.inativos7d)}</dd><dt>Elegíveis a reengajamento</dt><dd>${fmtN(ps.candidatosReengajamento)} <span class="hint">(ignorando janela de horário)</span></dd>
+      <dt>Por plataforma</dt><dd>${Object.entries(ps.porPlataforma).map(([k, v]) => `<span class="tag">${esc(k)} ${v}</span>`).join(" ") || "—"}</dd></dl>
+      <p class="hint" style="margin-top:12px">Cooldowns e janelas de horário do reengajamento ficam em <a href="#/config">Configuração → push</a>.</p></div>
+  </div>
+  <div class="panel" style="margin-top:14px"><div class="ph"><h2>No chat agora</h2><button class="btn sm" data-act="reload">Atualizar</button></div>
+    ${table([{ h: "Jogador", f: (c) => playerLink(c.playerId, c.playerName) }, { h: "Conexão", f: (c) => c.open ? '<span class="tag ok">aberta</span>' : '<span class="tag">fechando</span>' }, { h: "", f: (c) => `<button class="btn sm" data-act="kick" data-id="${c.playerId}">Desconectar</button>` }], on.rows, { empty: "Ninguém conectado ao chat." })}</div>`);
+  $("#pTo").onchange = (e) => $("#pIdWrap").style.display = e.target.value === "one" ? "" : "none";
+  ACTIONS.reload = route;
+  ACTIONS.kick = async (d) => { await api(`/players/${d.id}/kick`, { method: "POST", body: {} }); toast("Desconectado."); route(); };
+  ACTIONS.bcast = async () => { const text = $("#cText").value.trim(); if (!text) return; const r = await api("/chat/broadcast", { method: "POST", body: { text, as: $("#cAs").value } }); toast(`Entregue a ${r.entregues} jogador(es).`); $("#cText").value = ""; };
+  ACTIONS.push = async () => {
+    const body = { title: $("#pTitle").value.trim(), body: $("#pBody").value.trim(), priority: $("#pHigh").checked ? "high" : "normal" };
+    if (!body.title || !body.body) return toast("Preencha título e corpo.", "warn");
+    if ($("#pTo").value === "all") { if (!(await confirmar("Enviar para todos", `Isso dispara <b>${ps.tokens}</b> notificações agora.`, { okLabel: "Enviar" }))) return; body.all = true; } else body.playerId = +$("#pId").value;
+    const r = await api("/push/send", { method: "POST", body }); toast(r.fcmEnabled ? `${r.enviados}/${r.tokens} enviados (${r.invalidos} tokens inválidos removidos).` : "FCM desligado: nada foi enviado (modo log-only).", r.fcmEnabled ? "ok" : "warn");
+  };
+};
+
+/* ═══════════════════════════════ PEDIDOS ═══════════════════════════════ */
+VIEWS.orders = async function (sub, arg) {
+  if (sub === "mp" && arg) return orderDetail(arg);
+  const st = { provider: sub === "play" ? "play" : "mp", status: "", hours: "", q: "", offset: 0, limit: 100 };
+  async function load() {
+    const r = await api(`/orders?provider=${st.provider}&status=${st.status}&hours=${st.hours}&q=${encodeURIComponent(st.q)}&limit=${st.limit}&offset=${st.offset}`);
+    $("#ostatus").innerHTML = `<option value="">Todo status</option>` + r.porStatus.map((s) => `<option value="${esc(s.status)}" ${s.status === st.status ? "selected" : ""}>${esc(s.status)} (${s.n})</option>`).join("");
+    const cols = st.provider === "mp" ? [
+      { h: "Pedido", f: (o) => `<a href="#/orders/mp/${o.orderId}" class="mono">${o.orderId}</a>` }, { h: "Jogador", f: (o) => playerLink(o.playerId, o.playerName) },
+      { h: "Pacote", f: (o) => `${esc(o.packageId)} <span class="hint">${o.amountDC + o.bonusDC} DC</span>` }, { h: "Valor", f: (o) => fmtBRL(o.priceCents), num: true },
+      { h: "Status", f: (o) => statusTag(o.status) + (o.failReason ? ` <span class="hint">${esc(o.failReason)}</span>` : "") }, { h: "Método", f: (o) => esc(o.paymentMethod || "—") },
+      { h: "Criado", f: (o) => fmtDT(o.createdAt) }, { h: "Creditado", f: (o) => fmtDT(o.creditedAt) },
+    ] : [
+      { h: "Token", f: (o) => `<span class="mono" title="${esc(o.purchaseToken)}">${esc(o.purchaseToken.slice(0, 20))}…</span>` }, { h: "Jogador", f: (o) => playerLink(o.playerId, o.playerName) },
+      { h: "Produto", f: (o) => `${esc(o.productId)} ×${o.quantity}` }, { h: "DC", f: (o) => fmtN(o.totalDC), num: true }, { h: "Status", f: (o) => statusTag(o.status) + (o.failReason ? ` <span class="hint">${esc(o.failReason)}</span>` : "") },
+      { h: "GP order", f: (o) => `<span class="mono">${esc(o.gpOrderId || "—")}</span>` }, { h: "Ack", f: (o) => o.acknowledged ? "sim" : '<span class="tag gold">não</span>' }, { h: "Região", f: (o) => esc(o.regionCode || "—") },
+      { h: "Criado", f: (o) => fmtDT(o.createdAt) }, { h: "", f: (o) => o.creditedAt && !o.voidedAt ? `<button class="btn sm d" data-act="revoke" data-token="${esc(o.purchaseToken)}">Estornar</button>` : "" },
+    ];
+    $("#olist").innerHTML = table(cols, r.rows) + pager(r.total, st.limit, st.offset, "page");
+    bindActions($("#olist"));
+  }
+  setMain(`<div class="top"><div><h1>Pedidos</h1><p>Compras de DC Coin. Pedidos em <span class="tag danger">review</span> precisam de decisão manual.</p></div></div>
+  <div class="tabs"><button class="${st.provider === "mp" ? "on" : ""}" data-act="prov" data-p="mp">Mercado Pago</button><button class="${st.provider === "play" ? "on" : ""}" data-act="prov" data-p="play">Google Play</button></div>
+  <div class="row" style="margin-bottom:12px"><input type="text" id="oq" class="sm" style="width:280px" placeholder="orderId, paymentId, token ou nick"><select id="ostatus" class="sm"></select>
+    <select id="ohours" class="sm"><option value="">Todo período</option><option value="24">Últimas 24h</option><option value="168">7 dias</option><option value="720">30 dias</option></select></div><div id="olist"></div>`);
+  $("#oq").oninput = () => { clearTimeout(st.t); st.t = setTimeout(() => { st.q = $("#oq").value.trim(); st.offset = 0; load(); }, 250); };
+  $("#ostatus").onchange = (e) => { st.status = e.target.value; st.offset = 0; load(); };
+  $("#ohours").onchange = (e) => { st.hours = e.target.value; st.offset = 0; load(); };
+  ACTIONS.prov = (d) => goto(`#/orders/${d.p}`);
+  ACTIONS.page = (d) => { st.offset = Number(d.offset); load(); };
+  ACTIONS.revoke = async (d) => { if (await confirmar("Estornar compra Play", "Debita o DC creditado e anula a compra.", { danger: true, okLabel: "Estornar" })) { await api(`/orders/play/${encodeURIComponent(d.token)}/revoke`, { method: "POST", body: {} }); toast("Estornada."); load(); } };
+  await load();
+};
+
+async function orderDetail(orderId) {
+  const r = await api(`/orders?provider=mp&q=${encodeURIComponent(orderId)}&limit=1`);
+  const o = r.rows.find((x) => x.orderId === orderId);
+  if (!o) { setMain(`<a href="#/orders" class="hint">← Pedidos</a><div class="empty" style="margin-top:14px">Pedido ${esc(orderId)} não encontrado.</div>`); return; }
+  setMain(`<div class="top"><div><a href="#/orders" class="hint">← Pedidos</a><h1 class="mono" style="font-size:18px">${esc(o.orderId)}</h1><p>${statusTag(o.status)} · ${fmtBRL(o.priceCents)} · ${o.amountDC + o.bonusDC} DC · ${playerLink(o.playerId, o.playerName)}</p></div>
+    <div class="row"><button class="btn" data-act="reconcile">Consultar Mercado Pago</button>${!o.creditedAt ? `<button class="btn p" data-act="force">Creditar manualmente</button>` : ""}</div></div>
+  <div class="grid g2"><div class="panel"><h2>Pedido</h2><dl class="kv">
+    <dt>Pacote</dt><dd>${esc(o.packageId)} (${o.amountDC} + ${o.bonusDC} bônus)</dd><dt>Valor</dt><dd>${fmtBRL(o.priceCents)} ${o.currency}</dd>
+    <dt>Criado</dt><dd>${fmtDT(o.createdAt)}</dd><dt>Expira</dt><dd>${fmtDT(o.expiresAt)}</dd><dt>Creditado</dt><dd>${fmtDT(o.creditedAt)}</dd>
+    <dt>Motivo de falha</dt><dd>${esc(o.failReason || "—")}</dd></dl></div>
+  <div class="panel"><h2>Mercado Pago</h2><dl class="kv">
+    <dt>preferenceId</dt><dd class="mono">${esc(o.preferenceId || "—")}</dd><dt>paymentId</dt><dd class="mono">${esc(o.paymentId || "—")}</dd>
+    <dt>Método</dt><dd>${esc(o.paymentMethod || "—")}</dd><dt>Valor pago</dt><dd>${o.paidAmount != null ? "R$ " + Number(o.paidAmount).toFixed(2) : "—"}</dd>
+    <dt>Link</dt><dd>${o.initPoint ? `<a href="${esc(o.initPoint)}" target="_blank" rel="noopener">abrir checkout</a>` : "—"}</dd></dl>
+    <div class="row" style="margin-top:14px"><select id="oSt" class="sm">${["pending", "approved", "rejected", "cancelled", "expired", "review", "failed", "refunded"].map((s) => `<option ${s === o.status ? "selected" : ""}>${s}</option>`).join("")}</select><button class="btn sm" data-act="setst">Alterar status</button></div>
+    <p class="hint" style="margin-top:8px">Alterar o status não mexe no saldo. Use "Creditar manualmente" para creditar um pedido pago fora do fluxo.</p></div></div>`);
+  ACTIONS.reconcile = async () => { const x = await api(`/orders/mp/${orderId}/reconcile`, { method: "POST", body: {} }); toast(x.found ? `Processado: ${x.result.credited ? "creditado" : x.result.reason || x.order.status}` : "Nenhum pagamento encontrado no MP para este pedido.", x.found ? "ok" : "warn"); orderDetail(orderId); };
+  ACTIONS.force = async () => { const m = await confirmar("Creditar manualmente", `Credita <b>${o.amountDC + o.bonusDC} DC</b> ao jogador ${o.playerId} sem confirmação do Mercado Pago.`, { okLabel: "Creditar", campo: { label: "Motivo", placeholder: "ex.: comprovante Pix conferido" } }); if (m !== null) { await api(`/orders/mp/${orderId}/force-credit`, { method: "POST", body: { reason: m } }); toast("Creditado."); orderDetail(orderId); } };
+  ACTIONS.setst = async () => { await api(`/orders/mp/${orderId}/status`, { method: "POST", body: { status: $("#oSt").value } }); toast("Status alterado."); orderDetail(orderId); };
+}
+
+/* ═══════════════════════════════ RELATÓRIOS ═══════════════════════════════ */
+VIEWS.reports = async function () {
+  let days = 30, top = "kills";
+  async function load() {
+    const [s, p] = await Promise.all([api(`/reports/sales?days=${days}`), api(`/reports/players?days=${days}&top=${top}`)]);
+    const totMp = s.mp.reduce((a, x) => a + x.cents, 0), nMp = s.mp.reduce((a, x) => a + x.n, 0), nPlay = s.play.reduce((a, x) => a + x.n, 0), dcPlay = s.play.reduce((a, x) => a + x.dc, 0);
+    const cad = p.cadastros.reduce((a, x) => a + x.n, 0);
+    $("#rep").innerHTML = `
+    <div class="grid g4">${stat(`Receita MP (${days}d)`, fmtBRL(totMp), `${nMp} pedidos aprovados`, "gold")}${stat(`Compras Play (${days}d)`, fmtN(nPlay), `${fmtN(dcPlay)} DC entregues`, "info")}${stat(`Novas contas (${days}d)`, fmtN(cad), `${p.cadastros.reduce((a, x) => a + x.guests, 0)} guests`)}${stat("Ticket médio MP", nMp ? fmtBRL(totMp / nMp) : "—")}</div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="panel"><h2>Receita por dia (R$) — Mercado Pago</h2>${barChart(s.mp.map((x) => ({ dia: x.dia, n: x.cents / 100 })))}</div>
+      <div class="panel"><h2>Compras por dia — <span style="color:var(--gold2)">MP</span> e <span style="color:var(--info)">Play</span></h2>${barChart(s.mp, { series2: s.play })}</div>
+      <div class="panel"><h2>Novas contas por dia</h2>${barChart(p.cadastros)}</div>
+      <div class="panel"><h2>Funil de pedidos MP</h2>${hbars(s.funil, "status", "n")}</div>
+      <div class="panel"><h2>Pacotes mais vendidos (MP)</h2>${hbars(s.porPacote, "packageId", "n")}</div>
+      <div class="panel"><h2>Pacotes mais vendidos (Play)</h2>${hbars(s.porPacotePlay, "packageId", "n")}</div>
+      <div class="panel"><h2>Métodos de pagamento</h2>${hbars(s.metodos, "metodo", "cents", fmtBRL)}</div>
+      <div class="panel"><h2>Skins mais adquiridas</h2>${hbars(s.skins.map((x) => ({ ...x, skin: `skin ${x.skinId}` })), "skin", "n")}</div>
+      <div class="panel"><h2>Distribuição por nível</h2>${hbars(p.niveis, "faixa", "n")}</div>
+      <div class="panel"><div class="ph"><h2>Ranking</h2><select id="rtop" class="sm">${[["kills", "Kills"], ["level", "Nível"], ["headshots", "Headshots"], ["balanceDC", "Saldo DC"], ["balanceDS", "Saldo DS"]].map(([k, l]) => `<option value="${k}" ${k === top ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+        ${table([{ h: "#", f: (x, i) => "" }, { h: "Jogador", f: (x) => playerLink(x.playerId, x.playerName) }, { h: "Nível", f: (x) => x.level, num: true }, { h: "K/D", f: (x) => `${x.kills}/${x.deaths}`, num: true }, { h: "HS", f: (x) => x.headshots, num: true }, { h: "DC", f: (x) => fmtN(x.balanceDC), num: true }], p.top)}</div>
+    </div>`;
+    $$("#rep tbody tr").forEach((tr, i) => tr.children[0].textContent = i + 1);
+    $("#rtop").onchange = (e) => { top = e.target.value; load(); };
+  }
+  setMain(`<div class="top"><div><h1>Relatórios</h1><p>Vendas, cadastros e ranking.</p></div><div class="row"><select id="rdays" class="sm"><option value="7">7 dias</option><option value="30" selected>30 dias</option><option value="90">90 dias</option><option value="365">1 ano</option></select><button class="btn" data-act="csv">Exportar CSV de vendas</button></div></div><div id="rep"></div>`);
+  $("#rdays").onchange = (e) => { days = +e.target.value; load(); };
+  ACTIONS.csv = async () => {
+    const r = await api(`/orders?provider=mp&status=approved&hours=${days * 24}&limit=500`);
+    const lines = ["orderId;playerId;playerName;packageId;totalDC;priceBRL;paymentMethod;createdAt;creditedAt", ...r.rows.map((o) => [o.orderId, o.playerId, o.playerName || "", o.packageId, o.amountDC + o.bonusDC, (o.priceCents / 100).toFixed(2).replace(".", ","), o.paymentMethod || "", new Date(o.createdAt * 1000).toISOString(), o.creditedAt ? new Date(o.creditedAt * 1000).toISOString() : ""].join(";"))];
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv" })); a.download = `vendas-mp-${days}d.csv`; a.click();
+    if (r.total > 500) toast("Exportados os 500 mais recentes.", "warn");
+  };
+  await load();
+};
+
+/* ═══════════════════════════════ SKINS ═══════════════════════════════ */
+VIEWS.skins = async function () {
+  let skins = [];
+  async function load() {
+    const r = await api("/skins"); skins = r.skins;
+    $("#skinInfo").textContent = `${r.skins.length} no arquivo · ${r.carregadas} carregadas no catálogo`;
+    $("#slist").innerHTML = table([
+      { h: "skinId", f: (s) => `<b class="mono">${s.skinId}</b>` }, { h: "Nome", f: (s) => esc(s.name || "—") }, { h: "Slot", f: (s) => s.slotKey ? `<span class="tag">${esc(s.slotKey)}</span>` : '<span class="tag gold">sem slot</span>' },
+      { h: "Preço", f: (s) => `${fmtN(s.price)} <span class="hint">${s.currency || "DC"}</span>`, num: true }, { h: "Disponível", f: (s) => s.available === false ? '<span class="tag">oculta</span>' : '<span class="tag ok">na loja</span>' },
+      { h: "Donos", f: (s) => fmtN(s.owners), num: true },
+      { h: "", f: (s) => `<button class="btn sm" data-act="edit" data-id="${s.skinId}">Editar</button> <button class="btn sm d" data-act="rm" data-id="${s.skinId}">Excluir</button>` },
+    ], skins, { empty: "Catálogo vazio. Adicione a primeira skin ou edite o JSON." });
+    bindActions($("#slist"));
+  }
+  const form = (s = {}) => {
+    const box = modal(`<h2>${s.skinId != null ? `Skin ${s.skinId}` : "Nova skin"}</h2><div class="grid g2">
+      <div class="f"><label>skinId</label><input type="number" id="kId" value="${s.skinId ?? ""}" ${s.skinId != null ? "readonly" : ""}></div><div class="f"><label>Nome (só para o painel)</label><input type="text" id="kName" value="${esc(s.name || "")}"></div>
+      <div class="f"><label>Preço</label><input type="number" id="kPrice" value="${s.price ?? 0}" min="0"></div><div class="f"><label>Moeda</label><select id="kCur"><option ${s.currency !== "DS" ? "selected" : ""}>DC</option><option ${s.currency === "DS" ? "selected" : ""}>DS</option></select></div>
+      <div class="f"><label>Slot (ex.: rifle, pistol, outfit)</label><input type="text" id="kSlot" value="${esc(s.slotKey || "")}"><span class="sub">Sem slot a skin não pode ser equipada.</span></div>
+      <div class="f" style="justify-content:flex-end"><label class="check"><input type="checkbox" id="kAv" ${s.available !== false ? "checked" : ""}> Disponível na loja</label></div></div>
+      <div class="acts"><button class="btn" data-x>Cancelar</button><button class="btn p" id="kGo">Salvar</button></div>`);
+    $("[data-x]", box).onclick = closeModal;
+    $("#kGo", box).onclick = async () => { await api("/skins", { method: "POST", body: { skinId: +$("#kId", box).value, name: $("#kName", box).value.trim() || undefined, price: +$("#kPrice", box).value, currency: $("#kCur", box).value, slotKey: $("#kSlot", box).value.trim() || null, available: $("#kAv", box).checked } }); closeModal(); toast("Skin salva e catálogo recarregado."); load(); };
+  };
+  setMain(`<div class="top"><div><h1>Skins</h1><p id="skinInfo"></p></div><div class="row"><button class="btn" data-act="json">Editar JSON</button><button class="btn" data-act="reload">Recarregar catálogo</button><button class="btn p" data-act="new">Nova skin</button></div></div>
+    <p class="hint" style="margin:0 0 12px">O preço e a moeda aqui são a fonte da verdade — o cliente só envia o skinId. Alterações valem imediatamente.</p><div id="slist"></div>`);
+  ACTIONS.new = () => form();
+  ACTIONS.edit = (d) => form(skins.find((x) => x.skinId === +d.id));
+  ACTIONS.rm = async (d) => { const s = skins.find((x) => x.skinId === +d.id); if (await confirmar("Excluir skin", `Remove a skin ${d.id} do catálogo. Os ${s.owners} jogador(es) que já a possuem continuam com ela.`, { danger: true, okLabel: "Excluir" })) { await api(`/skins/${d.id}`, { method: "DELETE" }); toast("Excluída."); load(); } };
+  ACTIONS.reload = async () => { const r = await api("/skins/reload", { method: "POST", body: {} }); toast(`${r.carregadas} skins carregadas.`); load(); };
+  ACTIONS.json = () => {
+    const box = modal(`<h2>skins.json</h2><textarea id="kJson" class="code">${esc(JSON.stringify(skins.map(({ owners, ...s }) => s), null, 2))}</textarea>
+      <div class="acts"><button class="btn" data-x>Cancelar</button><button class="btn p" id="kGo">Substituir catálogo</button></div>`, { wide: true });
+    $("[data-x]", box).onclick = closeModal;
+    $("#kGo", box).onclick = async () => { let list; try { list = JSON.parse($("#kJson", box).value); } catch (e) { return toast(`JSON inválido: ${e.message}`, "err"); } await api("/skins", { method: "PUT", body: { skins: list } }); closeModal(); toast("Catálogo substituído."); load(); };
+  };
+  await load();
+};
+
+/* ═══════════════════════════════ PACOTES DC ═══════════════════════════════ */
+VIEWS.packages = async function () {
+  const r = await api("/packages");
+  let list = r.packages.map((p) => ({ ...p }));
+  function paint() {
+    $("#plist").innerHTML = `<div class="tw"><table><thead><tr><th>packageId / productId</th><th class="num">DC</th><th class="num">Bônus</th><th class="num">Preço (centavos)</th><th class="num">Preço</th><th class="num">R$/DC</th><th class="num">Vendas MP</th><th class="num">Vendas Play</th><th></th></tr></thead><tbody>
+      ${list.map((p, i) => `<tr><td><input type="text" class="sm mono" data-i="${i}" data-k="packageId" value="${esc(p.packageId)}" style="width:130px"></td>
+        <td class="num"><input type="number" class="sm" data-i="${i}" data-k="amountDC" value="${p.amountDC}" style="width:90px"></td>
+        <td class="num"><input type="number" class="sm" data-i="${i}" data-k="bonusDC" value="${p.bonusDC}" style="width:80px"></td>
+        <td class="num"><input type="number" class="sm" data-i="${i}" data-k="priceCents" value="${p.priceCents}" style="width:100px"></td>
+        <td class="num">${fmtBRL(p.priceCents)}</td><td class="num hint">${(p.priceCents / 100 / (p.amountDC + p.bonusDC)).toFixed(3)}</td>
+        <td class="num">${p.vendasMp ?? 0}</td><td class="num">${p.vendasPlay ?? 0}</td><td><button class="btn sm d" data-act="rm" data-i="${i}">Remover</button></td></tr>`).join("")}</tbody></table></div>`;
+    $$("#plist input").forEach((inp) => inp.onchange = () => { const p = list[+inp.dataset.i]; p[inp.dataset.k] = inp.type === "number" ? +inp.value : inp.value.trim(); paint(); });
+    bindActions($("#plist"));
+  }
+  setMain(`<div class="top"><div><h1>Pacotes DC</h1><p>Catálogo vendido no Mercado Pago e espelhado como produtos do Google Play.</p></div><div class="row"><button class="btn" data-act="add">Adicionar pacote</button><button class="btn p" data-act="save">Salvar e aplicar</button></div></div>
+    <div class="warnbox" style="margin-bottom:12px">O <b>preço em centavos</b> vale só para o Mercado Pago. No Android quem define o preço é o Play Console — mas o <b>productId</b> lá precisa ser exatamente igual ao packageId daqui, e a quantidade de DC é sempre esta. Alterações valem na hora, sem reiniciar${r.persistido ? "" : " (ainda não há dc-packages.json: o catálogo atual veio do código)"}.</div>
+    <div id="plist"></div>`);
+  paint();
+  ACTIONS.add = () => { list.push({ packageId: "dc_novo", amountDC: 100, bonusDC: 0, priceCents: 990 }); paint(); };
+  ACTIONS.rm = (d) => { list.splice(+d.i, 1); paint(); };
+  ACTIONS.save = async () => { const x = await api("/packages", { method: "PUT", body: { packages: list.map(({ packageId, amountDC, bonusDC, priceCents }) => ({ packageId, amountDC, bonusDC, priceCents })) } }); toast(`${x.packages.length} pacotes aplicados.`); route(); };
+};
+
+/* ═══════════════════════════════ CONFIG ═══════════════════════════════ */
+const CFG_SCHEMA = [
+  ["Servidor", [
+    ["serverName", "Nome do servidor", "text"], ["publicBaseUrl", "URL pública", "text", "Usada nos links de pagamento e webhooks."],
+    ["host", "Host (bind)", "text", null, true], ["port", "Porta", "int", null, true], ["logLevel", "Nível de log", "select:debug,info,warn,error"],
+    ["tokenTTLSeconds", "Validade do join token (s)", "int"], ["heartbeatTTLSeconds", "TTL do heartbeat (s)", "int", "Servidor sem heartbeat neste tempo sai da lista."],
+    ["rateLimit.windowSeconds", "Rate limit: janela (s)", "int"], ["rateLimit.maxRequests", "Rate limit: máx. requisições", "int"],
+  ]],
+  ["Builds do cliente", [
+    ["allowedClientBuilds", "Builds aceitas (uma por linha)", "lines", "Clientes fora desta lista recebem 'Incompatible client version'."],
+    ["latestClientBuild.version", "Build mais recente", "text"], ["latestClientBuild.sizeMB", "Tamanho (MB)", "int"],
+    ["latestClientBuild.changelog", "Changelog (uma linha por item)", "lines"],
+  ]],
+  ["Segredos", [
+    ["serverKey", "serverKey (X-Server-Key dos servidores de jogo)", "secret", "Mínimo 8 caracteres. Trocar exige atualizar os servidores de jogo."],
+    ["adminKey", "adminKey (este painel)", "secret", "Mínimo 12. Você será desconectado ao trocar."],
+    ["jwtSecret", "jwtSecret", "secret", "Trocar invalida todas as sessões de jogadores.", true], ["jwtExpirySeconds", "Validade da sessão (s)", "int", null, true],
+    ["googleClientId", "Google Client ID", "text", null, true],
+  ]],
+  ["Push (FCM)", [
+    ["fcm.projectId", "Project ID", "text", null, true], ["fcm.serviceAccountPath", "Service account (caminho)", "text", null, true], ["fcm.dryRun", "Dry-run (validar sem enviar)", "bool", null, true], ["fcm.concurrency", "Concorrência", "int", null, true],
+    ["push.raidCooldownSeconds", "Cooldown de alerta de raid (s)", "int"], ["push.reengagementEnabled", "Reengajamento ativo", "bool", "Efeito no próximo restart do job."],
+    ["push.reengagementIntervalMinutes", "Intervalo do job (min)", "int"], ["push.reengagementMaxPerRun", "Máx. por rodada", "int"],
+    ["push.reengagementInactiveHours", "Inativo há pelo menos (h)", "int"], ["push.reengagementMaxInactiveDays", "Inativo há no máximo (dias)", "int"],
+    ["push.reengagementCooldownHours", "Cooldown entre pushes (h)", "int"], ["push.reengagementMaxStreak", "Máx. pushes sem retorno", "int"],
+    ["push.quietHoursEnd", "Enviar a partir de (hora local)", "int"], ["push.quietHoursStart", "Enviar até (hora local)", "int"], ["push.suprimirSeOnlineNoChat", "Suprimir raid alert se online no chat", "bool"],
+    ["pushStorePath", "Arquivo de tokens push", "text", null, true],
+  ]],
+  ["Google Play Watcher", [
+    ["playWatcher.enabled", "Ativo", "bool", null, true], ["playWatcher.packageName", "Package name", "text", null, true], ["playWatcher.serviceAccountFile", "Service account (caminho)", "text", null, true],
+    ["playWatcher.track", "Track", "select:production,beta,alpha,internal", null, true], ["playWatcher.intervalSeconds", "Intervalo (s)", "int", null, true],
+    ["playWatcher.minUserFraction", "Fração mínima de rollout", "float", null, true], ["playWatcher.keepPreviousBuilds", "Builds anteriores mantidas", "int", null, true], ["playWatcher.changelogLanguage", "Idioma do changelog", "text", null, true],
+  ]],
+];
+const getP = (o, p) => p.split(".").reduce((a, k) => a?.[k], o);
+const setP = (o, p, v) => { const ks = p.split("."); let c = o; for (const k of ks.slice(0, -1)) { if (typeof c[k] !== "object" || c[k] === null) c[k] = {}; c = c[k]; } if (v === undefined) delete c[ks.at(-1)]; else c[ks.at(-1)] = v; };
+
+VIEWS.config = async function (tab = "form") {
+  const r = await api("/config");
+  const cfg = JSON.parse(JSON.stringify(r.disco || r.memoria));
+  const diff = r.disco && JSON.stringify(r.disco) !== JSON.stringify(r.memoria);
+  const field = ([path, label, type, hint, restart]) => {
+    const v = getP(cfg, path); const id = `cf_${path.replace(/\./g, "_")}`;
+    let input;
+    if (type === "bool") input = `<label class="check" style="margin-top:6px"><input type="checkbox" id="${id}" data-path="${path}" data-type="bool" ${v ? "checked" : ""}> ${v ? "sim" : "não"}</label>`;
+    else if (type === "lines") input = `<textarea id="${id}" data-path="${path}" data-type="lines">${esc((v || []).join("\n"))}</textarea>`;
+    else if (type.startsWith("select:")) input = `<select id="${id}" data-path="${path}" data-type="text">${type.slice(7).split(",").map((o) => `<option ${o === v ? "selected" : ""}>${o}</option>`).join("")}</select>`;
+    else if (type === "secret") input = `<div class="row" style="flex-wrap:nowrap"><input type="password" id="${id}" data-path="${path}" data-type="text" value="${esc(v ?? "")}"><button class="btn sm" data-act="show" data-t="${id}">Ver</button><button class="btn sm" data-act="gen" data-t="${id}">Gerar</button></div>`;
+    else input = `<input type="${type === "text" ? "text" : "number"}" ${type === "float" ? 'step="0.01"' : ""} id="${id}" data-path="${path}" data-type="${type}" value="${esc(v ?? "")}">`;
+    return `<div class="f"><label>${label}${restart ? ' <span class="tag" style="font-size:11px">reinício</span>' : ""}</label>${input}${hint ? `<span class="sub">${hint}</span>` : ""}</div>`;
+  };
+  setMain(`<div class="top"><div><h1>Configuração</h1><p>master.config.json. Campos marcados com "reinício" só valem após reiniciar o processo; os demais valem na hora.</p></div>
+    <div class="row"><button class="btn p" data-act="save">Salvar configuração</button></div></div>
+  ${diff ? `<div class="warnbox" style="margin-bottom:12px">O arquivo em disco difere do que está em memória (o Play Watcher ou outra rota alterou a config em runtime). Este formulário mostra o <b>disco</b>.</div>` : ""}
+  <div class="tabs"><button class="${tab === "form" ? "on" : ""}" data-act="tab" data-t="form">Formulário</button><button class="${tab === "json" ? "on" : ""}" data-act="tab" data-t="json">JSON completo</button></div>
+  ${tab === "form" ? `<div class="grid g2">${CFG_SCHEMA.map(([g, fs]) => `<div class="panel"><h2>${g}</h2><div class="grid" style="gap:12px">${fs.map(field).join("")}</div></div>`).join("")}</div>`
+    : `<div class="panel"><textarea id="cfgJson" class="code" style="min-height:70vh">${esc(JSON.stringify(cfg, null, 2))}</textarea></div>`}`);
+  $$("input[data-type=bool]").forEach((c) => c.onchange = () => c.parentElement.lastChild.textContent = c.checked ? " sim" : " não");
+  ACTIONS.tab = (d) => VIEWS.config(d.t);
+  ACTIONS.show = (d) => { const i = $("#" + d.t); i.type = i.type === "password" ? "text" : "password"; };
+  ACTIONS.gen = async (d) => { const x = await api("/config/generate-secret", { method: "POST", body: {} }); $("#" + d.t).value = x.secret; $("#" + d.t).type = "text"; };
+  ACTIONS.save = async () => {
+    let novo;
+    if (tab === "json") { try { novo = JSON.parse($("#cfgJson").value); } catch (e) { return toast(`JSON inválido: ${e.message}`, "err"); } }
+    else {
+      novo = cfg;
+      $$("[data-path]").forEach((el) => {
+        const t = el.dataset.type; let v;
+        if (t === "bool") v = el.checked; else if (t === "lines") v = el.value.split("\n").map((s) => s.trim()).filter(Boolean);
+        else if (t === "int") v = el.value === "" ? undefined : parseInt(el.value, 10); else if (t === "float") v = el.value === "" ? undefined : parseFloat(el.value);
+        else v = el.value === "" ? undefined : el.value;
+        setP(novo, el.dataset.path, v);
+      });
+    }
+    const chaveMudou = novo.adminKey !== (r.disco || r.memoria).adminKey || (!novo.adminKey && novo.serverKey !== (r.disco || r.memoria).serverKey);
+    const x = await api("/config", { method: "PUT", body: { config: novo } });
+    if (x.precisaRestart.length) toast(`Salvo. Reinicie o processo para aplicar: ${x.precisaRestart.join(", ")}`, "warn", 8000); else toast("Configuração salva e aplicada.");
+    if (chaveMudou) { await sleep(600); doLogout("Chave alterada. Entre com a nova."); } else VIEWS.config(tab);
+  };
+};
+
+/* ═══════════════════════════════ LOGS ═══════════════════════════════ */
+VIEWS.logs = async function () {
+  let level = "all", q = "", paused = false, lastSeq = 0;
+  const line = (e) => { const d = document.createElement("div"); d.className = e.level; d.innerHTML = `<span class="t">${new Date(e.ts).toLocaleTimeString("pt-BR")}</span> <span class="lv">${e.level.toUpperCase()}</span> ${esc(e.msg)}`; return d; };
+  const passes = (e) => (level === "all" || e.level === level) && (!q || e.msg.toLowerCase().includes(q));
+  async function load() {
+    const r = await api(`/logs?limit=500`); const box = $("#logbox"); box.innerHTML = "";
+    r.rows.filter(passes).forEach((e) => box.appendChild(line(e))); lastSeq = r.lastSeq; box.scrollTop = box.scrollHeight;
+  }
+  setMain(`<div class="top"><div><h1>Logs</h1><p>Últimas linhas do processo, ao vivo. <span id="lstate" class="tag ok">conectado</span></p></div>
+    <div class="row"><select id="llev" class="sm"><option value="all">Todos os níveis</option><option value="error">error</option><option value="warn">warn</option><option value="info">info</option><option value="debug">debug</option><option value="chat">chat</option></select>
+      <input type="text" id="lq" class="sm" placeholder="filtrar texto" style="width:220px"><button class="btn" data-act="pause" id="lpause">Pausar</button><button class="btn" data-act="clear">Limpar tela</button></div></div>
+    <div id="logbox"></div>`);
+  $("#llev").onchange = (e) => { level = e.target.value; load(); };
+  $("#lq").oninput = () => { q = $("#lq").value.trim().toLowerCase(); load(); };
+  ACTIONS.pause = () => { paused = !paused; $("#lpause").textContent = paused ? "Retomar" : "Pausar"; if (!paused) load(); };
+  ACTIONS.clear = () => $("#logbox").innerHTML = "";
+  await load();
+  S.es = new EventSource(`${S.base}/admin/api/logs/stream?key=${encodeURIComponent(S.key)}`);
+  S.es.onmessage = (ev) => { if (paused) return; const e = JSON.parse(ev.data); if (!passes(e)) return; const box = $("#logbox"); if (!box) return; const atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 40; box.appendChild(line(e)); while (box.children.length > 1500) box.firstChild.remove(); if (atEnd) box.scrollTop = box.scrollHeight; };
+  S.es.onerror = () => { const s = $("#lstate"); if (s) { s.className = "tag danger"; s.textContent = "reconectando…"; } };
+  S.es.onopen = () => { const s = $("#lstate"); if (s) { s.className = "tag ok"; s.textContent = "conectado"; } };
+};
+
+/* ═══════════════════════════════ AUDITORIA ═══════════════════════════════ */
+VIEWS.audit = async function () {
+  const st = { action: "", target: "", offset: 0, limit: 100 };
+  async function load() {
+    const r = await api(`/audit?action=${encodeURIComponent(st.action)}&target=${encodeURIComponent(st.target)}&limit=${st.limit}&offset=${st.offset}`);
+    $("#alist").innerHTML = table([
+      { h: "Quando", f: (a) => fmtDT(a.createdAt) }, { h: "Ação", f: (a) => `<span class="tag violet">${esc(a.action)}</span>` },
+      { h: "Alvo", f: (a) => a.target && /^\d{8}$/.test(a.target) ? `<a href="#/players/${a.target}" class="mono">${a.target}</a>` : `<span class="mono">${esc(a.target || "—")}</span>` },
+      { h: "Detalhes", f: (a) => `<span class="mono hint" title="${esc(a.details || "")}">${esc((a.details || "").slice(0, 120))}${(a.details || "").length > 120 ? "…" : ""}</span>` }, { h: "IP", f: (a) => `<span class="mono">${esc(a.ip || "")}</span>` },
+    ], r.rows, { empty: "Nenhuma ação registrada ainda." }) + pager(r.total, st.limit, st.offset, "page");
+    bindActions($("#alist"));
+  }
+  setMain(`<div class="top"><div><h1>Auditoria</h1><p>Tudo que foi feito por este painel: quem, quando, em quem.</p></div>
+    <div class="row"><select id="aact" class="sm"><option value="">Toda ação</option>${["player", "coins", "ban", "server", "order", "skins", "packages", "config", "push", "chat", "play"].map((a) => `<option>${a}</option>`).join("")}</select><input type="text" id="atgt" class="sm" placeholder="alvo (playerId, orderId…)" style="width:200px"></div></div><div id="alist"></div>`);
+  $("#aact").onchange = (e) => { st.action = e.target.value; st.offset = 0; load(); };
+  $("#atgt").oninput = () => { st.target = $("#atgt").value.trim(); st.offset = 0; load(); };
+  ACTIONS.page = (d) => { st.offset = Number(d.offset); load(); };
+  await load();
+};
+</script>
+</body>
+</html>

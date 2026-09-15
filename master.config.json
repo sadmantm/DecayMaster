@@ -3,6 +3,7 @@
   "host": "0.0.0.0",
   "port": 3000,
   "publicBaseUrl": "http://localhost:3000",
+  "adminKey": "d5c9912f2159091e887aa37b9d8e73bac55bf6885e8687f1a6ab1ad325b03569",
   "tokenTTLSeconds": 60,
   "heartbeatTTLSeconds": 90,
   "rateLimit": {
