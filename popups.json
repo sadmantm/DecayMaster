@@ -1,0 +1,39 @@
+{
+  "revision": 6,
+  "popups": [
+    {
+      "popupId": "comunidade_zap",
+      "titulo": "Entre na comunidade (whatsapp)",
+      "imageUrl": "http://localhost:3000/popup-images/comunidade_zap-df3167719deac8ed.png",
+      "imageHash": "df3167719deac8ed",
+      "linkUrl": "https://chat.whatsapp.com/Ju5Vmi1XO6OH3Au2vjXCVW",
+      "buttonText": "entrar na comunidade",
+      "frequency": "always",
+      "order": 1,
+      "enabled": true,
+      "startAt": null,
+      "endAt": null,
+      "platforms": [],
+      "builds": [],
+      "createdAt": 1789924274,
+      "updatedAt": 1789924274
+    },
+    {
+      "popupId": "ak_ouro",
+      "titulo": "ak_ouro",
+      "imageUrl": "http://localhost:3000/popup-images/ak_ouro-923a47a59e336580.png",
+      "imageHash": "923a47a59e336580",
+      "linkUrl": "",
+      "buttonText": "",
+      "frequency": "always",
+      "order": 2,
+      "enabled": true,
+      "startAt": null,
+      "endAt": null,
+      "platforms": [],
+      "builds": [],
+      "createdAt": 1789924449,
+      "updatedAt": 1789924449
+    }
+  ]
+}

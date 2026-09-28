@@ -141,6 +141,29 @@ input.sm,select.sm{padding:5px 8px;width:auto}
 .bars span{height:10px;background:var(--gold);border-radius:3px;min-width:2px}
 .bars small{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
 
+/* ── relatórios ── */
+.section-title{margin:24px 0 10px;color:var(--muted);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em}
+.delta{font-size:12px;font-weight:500;white-space:nowrap}
+.delta.up{color:var(--ok)}.delta.down{color:var(--danger)}.delta.flat{color:var(--muted)}
+.lchart{width:100%;height:auto;display:block}
+.lchart text{fill:var(--dim);font:10.5px var(--mono)}
+.lchart line.g{stroke:var(--line);stroke-width:1}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:6px}
+.legend i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:6px;vertical-align:3px}
+.spark{width:100%;height:34px;display:block;margin-top:8px}
+.verdict{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:22px;align-items:center}
+.verdict .big{font-size:28px;font-weight:600;margin:2px 0}
+.verdict.up{border-color:rgba(103,183,132,.5)}.verdict.up .big{color:var(--ok)}
+.verdict.down{border-color:rgba(217,107,107,.5)}.verdict.down .big{color:var(--danger)}
+.verdict.flat .big{color:var(--gold2)}
+.sinais{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:4px 22px;font-size:13px}
+.sinais div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);padding:5px 0}
+table.coh td.c,table.coh th.c{text-align:center;font-variant-numeric:tabular-nums;padding:6px 8px}
+.heat{display:grid;grid-template-columns:34px repeat(24,1fr);gap:2px;font-size:10.5px}
+.heat > div{height:18px;border-radius:2px}
+.heat .lb{color:var(--dim);font-family:var(--mono);text-align:center;line-height:18px}
+@media (max-width:760px){.verdict{grid-template-columns:1fr}}
+
 /* ── logs ── */
 #logbox{font-family:var(--mono);font-size:12.5px;line-height:1.55;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);height:calc(100vh - 270px);overflow:auto;padding:8px 12px}
 #logbox div{white-space:pre-wrap;word-break:break-word;padding:1px 0;border-bottom:1px solid rgba(255,255,255,.02)}
@@ -292,7 +315,8 @@ if (S.key) api("/ping", { silent: true }).then(entrar).catch(() => doLogout());
 /* ═══════════════════════════════ nav / router ═══════════════════════════════ */
 const NAV = [
   ["Operação", [["overview", "Visão geral"], ["players", "Jogadores"], ["coins", "Moedas"], ["bans", "Banimentos"], ["servers", "Servidores"], ["chat", "Chat e push"]]],
-  ["Loja", [["orders", "Pedidos"], ["reports", "Relatórios"], ["skins", "Skins"], ["packages", "Pacotes DC"]]],
+  ["Loja", [["orders","Pedidos"], ["reports","Relatórios"], ["skins","Skins"],
+               ["packages","Pacotes DC"], ["popups","Pop-ups"]]],
   ["Sistema", [["config", "Configuração"], ["logs", "Logs"], ["audit", "Auditoria"]]],
 ];
 function renderNav() {
@@ -771,39 +795,316 @@ async function orderDetail(orderId) {
 }
 
 /* ═══════════════════════════════ RELATÓRIOS ═══════════════════════════════ */
-VIEWS.reports = async function () {
-  let days = 30, top = "kills";
-  async function load() {
-    const [s, p] = await Promise.all([api(`/reports/sales?days=${days}`), api(`/reports/players?days=${days}&top=${top}`)]);
-    const totMp = s.mp.reduce((a, x) => a + x.cents, 0), nMp = s.mp.reduce((a, x) => a + x.n, 0), nPlay = s.play.reduce((a, x) => a + x.n, 0), dcPlay = s.play.reduce((a, x) => a + x.dc, 0);
-    const cad = p.cadastros.reduce((a, x) => a + x.n, 0);
-    $("#rep").innerHTML = `
-    <div class="grid g4">${stat(`Receita MP (${days}d)`, fmtBRL(totMp), `${nMp} pedidos aprovados`, "gold")}${stat(`Compras Play (${days}d)`, fmtN(nPlay), `${fmtN(dcPlay)} DC entregues`, "info")}${stat(`Novas contas (${days}d)`, fmtN(cad), `${p.cadastros.reduce((a, x) => a + x.guests, 0)} guests`)}${stat("Ticket médio MP", nMp ? fmtBRL(totMp / nMp) : "—")}</div>
-    <div class="grid g2" style="margin-top:14px">
-      <div class="panel"><h2>Receita por dia (R$) — Mercado Pago</h2>${barChart(s.mp.map((x) => ({ dia: x.dia, n: x.cents / 100 })))}</div>
-      <div class="panel"><h2>Compras por dia — <span style="color:var(--gold2)">MP</span> e <span style="color:var(--info)">Play</span></h2>${barChart(s.mp, { series2: s.play })}</div>
-      <div class="panel"><h2>Novas contas por dia</h2>${barChart(p.cadastros)}</div>
-      <div class="panel"><h2>Funil de pedidos MP</h2>${hbars(s.funil, "status", "n")}</div>
-      <div class="panel"><h2>Pacotes mais vendidos (MP)</h2>${hbars(s.porPacote, "packageId", "n")}</div>
-      <div class="panel"><h2>Pacotes mais vendidos (Play)</h2>${hbars(s.porPacotePlay, "packageId", "n")}</div>
-      <div class="panel"><h2>Métodos de pagamento</h2>${hbars(s.metodos, "metodo", "cents", fmtBRL)}</div>
-      <div class="panel"><h2>Skins mais adquiridas</h2>${hbars(s.skins.map((x) => ({ ...x, skin: `skin ${x.skinId}` })), "skin", "n")}</div>
-      <div class="panel"><h2>Distribuição por nível</h2>${hbars(p.niveis, "faixa", "n")}</div>
-      <div class="panel"><div class="ph"><h2>Ranking</h2><select id="rtop" class="sm">${[["kills", "Kills"], ["level", "Nível"], ["headshots", "Headshots"], ["balanceDC", "Saldo DC"], ["balanceDS", "Saldo DS"]].map(([k, l]) => `<option value="${k}" ${k === top ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-        ${table([{ h: "#", f: (x, i) => "" }, { h: "Jogador", f: (x) => playerLink(x.playerId, x.playerName) }, { h: "Nível", f: (x) => x.level, num: true }, { h: "K/D", f: (x) => `${x.kills}/${x.deaths}`, num: true }, { h: "HS", f: (x) => x.headshots, num: true }, { h: "DC", f: (x) => fmtN(x.balanceDC), num: true }], p.top)}</div>
-    </div>`;
-    $$("#rep tbody tr").forEach((tr, i) => tr.children[0].textContent = i + 1);
-    $("#rtop").onchange = (e) => { top = e.target.value; load(); };
+const RET = [1, 3, 7, 14, 30];
+const pct = (v, d = 1) => (v == null || !isFinite(v) ? "—" : `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d })}%`);
+const fmtDec = (v, d = 1) => (v == null || !isFinite(v) ? "—" : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d }));
+const fmtDia = (d) => (d ? String(d).split("-").reverse().join("/") : "—");
+const brlCurto = (c) => "R$ " + Math.round((c || 0) / 100).toLocaleString("pt-BR");
+
+function varTag(d, { pp, invert } = {}) {
+  if (d == null || !isFinite(d)) return "";
+  const txt = `${d >= 0 ? "+" : ""}${fmtDec(d * 100)}${pp ? " p.p." : "%"}`;
+  const flat = Math.abs(d) < (pp ? 0.005 : 0.02);
+  const cls = flat ? "flat" : (invert ? d < 0 : d > 0) ? "up" : "down";
+  return `<span class="delta ${cls}">${flat ? "■" : d > 0 ? "▲" : "▼"} ${txt}</span>`;
+}
+function deltaTag(cur, prev, opts = {}) {
+  if (cur == null || prev == null) return "";
+  if (opts.pp) return varTag(cur - prev, opts);
+  if (!prev) return cur ? '<span class="delta up">▲ novo</span>' : "";
+  return varTag((cur - prev) / prev, opts);
+}
+function kpi(l, cur, prev, fmt, { cls = "", pp, invert, sub, semBase } = {}) {
+  const cmp = prev === undefined ? ""
+    : semBase ? `<span class="hint">sem base de comparação ainda</span>`
+    : `anterior ${fmt(prev)} ${deltaTag(cur, prev, { pp, invert })}`;
+  return stat(l, fmt(cur), [sub, cmp].filter(Boolean).join(" · "), cls);
+}
+
+function lineChart(labels, series, { H = 200, fmt = fmtN } = {}) {
+  const vals = series.flatMap((s) => s.values.filter((v) => v != null));
+  if (!labels.length || !vals.length) return `<div class="empty">Sem dados no período.</div>`;
+  const W = 680, pL = 52, pR = 10, pT = 10, pB = 22;
+  const max = Math.max(1e-9, ...vals);
+  const iw = W - pL - pR, ih = H - pT - pB;
+  const x = (i) => pL + (labels.length === 1 ? iw / 2 : (i * iw) / (labels.length - 1));
+  const y = (v) => pT + (1 - v / max) * ih;
+  const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => {
+    const v = max * f;
+    return `<line class="g" x1="${pL}" x2="${W - pR}" y1="${y(v)}" y2="${y(v)}"/><text x="${pL - 6}" y="${y(v) + 3}" text-anchor="end">${esc(fmt(v))}</text>`;
+  }).join("");
+  const step = Math.max(1, Math.ceil(labels.length / 8));
+  const xl = labels.map((l, i) => (i % step === 0 || i === labels.length - 1
+    ? `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${esc(fmtDia(l).slice(0, 5))}</text>` : "")).join("");
+  const paths = series.map((s) => {
+    let d = "", pen = false;
+    s.values.forEach((v, i) => {
+      if (v == null) { pen = false; return; }
+      d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+      pen = true;
+    });
+    const dots = labels.length <= 31 ? s.values.map((v, i) => (v == null ? "" : `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2" style="fill:${s.color}"/>`)).join("") : "";
+    return `<path d="${d}" fill="none" style="stroke:${s.color}" stroke-width="${s.w || 2}" stroke-linejoin="round" ${s.dashed ? 'stroke-dasharray="5 4"' : ""}/>${dots}`;
+  }).join("");
+  const cw = iw / labels.length;
+  const hov = labels.map((l, i) => `<rect x="${x(i) - cw / 2}" y="${pT}" width="${cw}" height="${ih}" fill="transparent"><title>${esc(fmtDia(l))}\n${series.map((s) => `${s.name}: ${s.values[i] == null ? "—" : fmt(s.values[i])}`).join("\n")}</title></rect>`).join("");
+  const legend = `<div class="legend">${series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("")}</div>`;
+  return `${legend}<svg class="lchart" viewBox="0 0 ${W} ${H}">${grid}${xl}${paths}${hov}</svg>`;
+}
+
+function sparkline(vals, color = "var(--ok)") {
+  if (vals.length < 2) return "";
+  const W = 200, H = 34, max = Math.max(1, ...vals);
+  const pts = vals.map((v, i) => `${((i * W) / (vals.length - 1)).toFixed(1)},${(H - 2 - (v / max) * (H - 4)).toFixed(1)}`).join(" ");
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" style="stroke:${color}" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+function heatmap(rows) {
+  if (!rows.length) return `<div class="empty">A amostragem começou agora — o mapa se forma ao longo dos próximos dias.</div>`;
+  const max = Math.max(1, ...rows.map((r) => r.m));
+  const idx = new Map(rows.map((r) => [`${r.dow}:${r.h}`, r]));
+  const dn = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+  let h = `<div class="heat"><span></span>${Array.from({ length: 24 }, (_, i) => `<span class="lb">${i % 3 === 0 ? i : ""}</span>`).join("")}`;
+  for (let d = 0; d < 7; d++) {
+    h += `<span class="lb">${dn[d]}</span>`;
+    for (let i = 0; i < 24; i++) {
+      const c = idx.get(`${d}:${i}`);
+      const bg = c ? `rgba(224,168,63,${(0.06 + (c.m / max) * 0.9).toFixed(2)})` : "var(--bg)";
+      h += `<div style="background:${bg}" title="${dn[d]} ${i}h — média ${c ? fmtDec(c.m) : "—"} · pico ${c ? c.mx : "—"}"></div>`;
+    }
   }
-  setMain(`<div class="top"><div><h1>Relatórios</h1><p>Vendas, cadastros e ranking.</p></div><div class="row"><select id="rdays" class="sm"><option value="7">7 dias</option><option value="30" selected>30 dias</option><option value="90">90 dias</option><option value="365">1 ano</option></select><button class="btn" data-act="csv">Exportar CSV de vendas</button></div></div><div id="rep"></div>`);
-  $("#rdays").onchange = (e) => { days = +e.target.value; load(); };
+  return h + `</div><p class="hint" style="margin-top:8px">Média de jogadores em partida por hora local. Use para agendar eventos, wipes e pushes.</p>`;
+}
+
+function tabelaCoortes(rows) {
+  if (!rows.length) return `<div class="empty">Nenhuma conta criada no período.</div>`;
+  const cell = (c, n) => {
+    const v = c[`d${n}`];
+    if (v == null) return `<td class="c hint">·</td>`;
+    const p = c.size ? v / c.size : 0;
+    return `<td class="c" style="background:rgba(103,183,132,${(0.06 + p * 0.85).toFixed(2)})" title="${v} de ${c.size}">${pct(p, 0)}</td>`;
+  };
+  return `<div class="tw" style="max-height:430px"><table class="coh"><thead><tr><th>Coorte</th><th class="num">Contas</th>${RET.map((n) => `<th class="c">D${n}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map((c) => `<tr><td>${fmtDia(c.day)}</td><td class="num">${fmtN(c.size)}</td>${RET.map((n) => cell(c, n)).join("")}</tr>`).join("")}</tbody></table></div>
+    <p class="hint" style="margin-top:8px">% das contas criadas no dia que abriram o jogo exatamente N dias depois. "·" = ainda não deu tempo.</p>`;
+}
+
+function baixarCSV(lines, nome) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv" }));
+  a.download = nome;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+function renderLive(L) {
+  const el = $("#live");
+  if (!el) return;
+  const h = L.hoje, o = L.ontemAteAgora, ot = L.ontemTotal, v = L.voltaramHoje;
+  el.innerHTML = `<div class="section-title">Agora <span class="hint" style="text-transform:none;letter-spacing:0;font-weight:400">· ${new Date(L.ts * 1000).toLocaleTimeString("pt-BR")} · comparações com ontem até este mesmo horário</span></div>
+  <div class="grid g4">
+    <div class="panel stat ok"><div class="l">Jogadores em partida agora</div><div class="v">${fmtN(L.ccu)}</div>
+      <div class="s">${L.servidores} servidor(es) online · pico hoje ${fmtN(L.picoHoje)}</div>${sparkline(L.ultimaHora.map((x) => x.ccu))}</div>
+    ${stat("Fizeram login hoje", fmtN(h.ativos), `${fmtN(h.logins)} logins · ${fmtN(h.jogaram)} entraram em partida · ontem ${fmtN(o.ativos)} ${deltaTag(h.ativos, o.ativos)}`, "info")}
+    ${stat("Logaram ontem e voltaram hoje", pct(v.pct), `${fmtN(v.voltou)} de ${fmtN(v.base)} · dia ainda em andamento`, "ok")}
+    ${stat("Receita hoje", fmtBRL(h.receita), `${fmtN(h.compras)} compras · ${fmtN(h.pagantes)} pagantes · ontem ${fmtBRL(o.receita)} ${deltaTag(h.receita, o.receita)}`, "gold")}
+  </div>
+  <div class="panel" style="margin-top:14px"><div class="ph"><h2>Últimas compras</h2>
+    <span class="hint">hoje: ${fmtN(h.novos)} contas novas (ontem até agora ${fmtN(o.novos)}) · ontem inteiro: ${fmtN(ot.ativos)} logaram · ${fmtN(ot.novos)} contas · ${fmtBRL(ot.receita)}</span></div>
+    ${table([
+      { h: "Quando", f: (c) => `${ago(c.ts)} atrás` },
+      { h: "Jogador", f: (c) => playerLink(c.playerId, c.playerName) },
+      { h: "Loja", f: (c) => `<span class="tag ${c.prov === "mp" ? "info" : "violet"}">${c.prov === "mp" ? "Mercado Pago" : "Google Play"}</span>` },
+      { h: "Pacote", f: (c) => `${esc(c.pacote)} <span class="hint">${fmtN(c.dc)} DC</span>` },
+      { h: "Valor", f: (c) => (c.cents == null ? "—" : `${c.prov === "play" ? "~" : ""}${fmtBRL(c.cents)}`), num: true },
+    ], L.ultimasCompras, { empty: "Nenhuma compra ainda." })}</div>`;
+}
+
+function renderReports(G, s, p, top) {
+  const A = G.atual, P = G.anterior, RA = G.retencao.atual, RP = G.retencao.anterior;
+  const T = G.totais, AU = G.audiencia, V = G.veredito;
+  const semBase = !G.baseConfiavel;
+  const lab = G.serie.map((x) => x.day);
+  const col = (k) => G.serie.map((x) => x[k]);
+  const nN = (v) => (v == null ? "—" : fmtN(Math.round(v)));
+  const nBRL = (v) => (v == null ? "—" : fmtBRL(v));
+  const nDec = (v) => fmtDec(v);
+  const C = { gold: "var(--gold)", info: "var(--info)", ok: "var(--ok)", danger: "var(--danger)", violet: "var(--violet)", dim: "var(--dim)" };
+  const painel = (t, html) => `<div class="panel"><h2 style="margin-bottom:10px">${t}</h2>${html}</div>`;
+  const ranking = p.top.map((x, i) => ({ ...x, pos: i + 1 }));
+
+  return `
+  ${G.rastreioDesde > (lab[0] || G.hoje) ? `<div class="warnbox" style="margin-top:14px">O rastreio de atividade começou em <b>${fmtDia(G.rastreioDesde)}</b>. Antes disso, DAU e retenção são estimados só por cadastros, último login e compras, e ficam abaixo do real. As comparações de audiência ficam confiáveis quando o período anterior inteiro for posterior a essa data. Receita, compras e novas contas são exatas desde sempre.</div>` : ""}
+
+  <div class="panel verdict ${V.classe}" style="margin-top:14px">
+    <div><div class="hint">Últimos ${G.days} dias × ${G.days} dias anteriores</div><div class="big">${esc(V.titulo)}</div><div class="hint">${esc(V.resumo)}</div></div>
+    <div class="sinais">${V.sinais.map((x) => `<div><span>${esc(x.nome)}</span><span>${x.v == null
+      ? `<span class="hint">${esc(x.nota || "sem dados")}</span>`
+      : `${varTag(x.v, { pp: x.pp })}${x.sufixo ? ` <span class="hint">${esc(x.sufixo)}</span>` : ""}`}</span></div>`).join("")}</div>
+  </div>
+
+  <div class="section-title">Audiência</div>
+  <div class="grid g4">
+    ${kpi("Jogadores ativos/dia (DAU médio)", A.dauMedio, P.dauMedio, nN, { cls: "info", semBase, sub: `${nN(A.jogaramMedio)} jogaram partida` })}
+    ${kpi("Ativos no mês (MAU)", AU.mau, AU.mauAnterior, nN, { semBase: !AU.mauConfiavel, sub: `WAU ${nN(AU.wau)}` })}
+    ${kpi("Fidelidade (DAU/MAU)", AU.stickiness, undefined, (v) => pct(v), { sub: "acima de 20% é saudável em mobile" })}
+    ${kpi("Jogadores únicos no período", A.ativosUnicos, P.ativosUnicos, nN, { semBase })}
+    ${kpi("Novas contas/dia", A.novosDia, P.novosDia, nDec, { cls: "ok", sub: `${fmtN(A.novos)} no período` })}
+    ${kpi("Voltaram após 7+ dias fora (/dia)", A.ressurgidosDia, P.ressurgidosDia, nDec, { semBase })}
+    ${kpi("Pico de simultâneos", A.ccuPico, P.ccuPico, nN, { semBase: P.ccuPico == null })}
+    ${kpi("Média de simultâneos", A.ccuMedio, P.ccuMedio, nDec, { semBase: P.ccuMedio == null })}
+  </div>
+
+  <div class="section-title">Retenção</div>
+  <div class="grid g4">
+    ${kpi("Voltaram no dia seguinte (todos)", A.retornoD1, P.retornoD1, (v) => pct(v), { cls: "ok", pp: true, semBase, sub: "ativos num dia que abriram no outro" })}
+    ${kpi("Retenção D1 (contas novas)", RA.d1, RP.d1, (v) => pct(v), { pp: true, semBase: RP.d1 == null, sub: `${fmtN(RA.base1)} contas` })}
+    ${kpi("Retenção D7", RA.d7, RP.d7, (v) => pct(v), { pp: true, semBase: RP.d7 == null, sub: `${fmtN(RA.base7)} contas` })}
+    ${kpi("Retenção D30", RA.d30, RP.d30, (v) => pct(v), { pp: true, semBase: RP.d30 == null, sub: `${fmtN(RA.base30)} contas` })}
+  </div>
+
+  <div class="section-title">Monetização</div>
+  <div class="grid g4">
+    ${kpi("Receita no período", A.receita, P.receita, nBRL, { cls: "gold", sub: `MP ${fmtBRL(A.receitaMp)} · Play ~${fmtBRL(A.receitaPlayEst)}` })}
+    ${kpi("Receita média/dia", A.receitaDia, P.receitaDia, nBRL, { cls: "gold" })}
+    ${kpi("Compras por dia", A.comprasDia, P.comprasDia, nDec, { sub: `${fmtN(A.compras)} no período (${A.comprasMp} MP · ${A.comprasPlay} Play)` })}
+    ${kpi("Pagantes únicos", A.pagantes, P.pagantes, nN, { sub: `${fmtN(A.novosPagantes)} pagaram pela 1ª vez` })}
+    ${kpi("Conversão (pagantes/ativos)", A.conversao, P.conversao, (v) => pct(v, 2), { pp: true, semBase })}
+    ${kpi("ARPDAU", A.arpdau, P.arpdau, nBRL, { sub: "receita por ativo por dia", semBase })}
+    ${kpi("ARPPU", A.arppu, P.arppu, nBRL, { sub: "receita por pagante" })}
+    ${kpi("Ticket médio", A.ticket, P.ticket, nBRL)}
+  </div>
+
+  <div class="section-title">Desde o início</div>
+  <div class="grid g4">
+    ${stat("Receita total", fmtBRL(T.receita), `MP ${fmtBRL(T.receitaMp)} (${fmtN(T.pedidosMp)} pedidos) · Play ~${fmtBRL(T.receitaPlayEst)} (${fmtN(T.comprasPlay)})`, "gold")}
+    ${stat("Contas criadas", fmtN(T.contas), `desde ${fmtD(T.primeiraConta)}`)}
+    ${stat("Pagantes (todos)", fmtN(T.pagantes), `${pct(T.contas ? T.pagantes / T.contas : null, 2)} das contas`)}
+    ${stat("DC em circulação", fmtN(T.dcCirculacao), `receita por conta ${T.contas ? fmtBRL(T.receita / T.contas) : "—"}`)}
+  </div>
+
+  <div class="section-title">Evolução diária</div>
+  <div class="grid g2">
+    ${painel("Jogadores ativos por dia", lineChart(lab, [
+      { name: "DAU", values: col("dau"), color: C.info, w: 2.5 },
+      { name: "Média 7 dias", values: col("media7"), color: C.gold, dashed: true },
+      { name: "Novas contas", values: col("novos"), color: C.ok },
+      { name: "Jogaram partida", values: col("jogaram"), color: C.violet, w: 1.5 },
+    ], { fmt: nN }))}
+    ${painel("Voltaram no dia seguinte", lineChart(lab, [
+      { name: "Retorno D+1 (todos os ativos)", values: col("retornoPct"), color: C.ok, w: 2.5 },
+    ], { fmt: (v) => pct(v, 0) }))}
+    ${painel("Receita por dia", lineChart(lab, [
+      { name: "Total", values: col("receita"), color: C.gold, w: 2.5 },
+      { name: "Mercado Pago", values: col("receitaMp"), color: C.info },
+      { name: "Play (estimado)", values: col("receitaPlayEst"), color: C.violet },
+    ], { fmt: brlCurto }))}
+    ${painel("Compras e pagantes por dia", lineChart(lab, [
+      { name: "Compras", values: col("compras"), color: C.gold, w: 2.5 },
+      { name: "Pagantes", values: col("pagantes"), color: C.info },
+      { name: "Novos pagantes", values: col("novosPagantes"), color: C.ok },
+    ], { fmt: nN }))}
+    ${painel("Jogadores simultâneos", lineChart(lab, [
+      { name: "Pico do dia", values: col("ccuPico"), color: C.ok, w: 2.5 },
+      { name: "Média do dia", values: col("ccuMedio"), color: C.dim },
+    ], { fmt: nN }))}
+    ${painel("Economia de DC", lineChart(lab, [
+      { name: "DC comprado", values: col("dcComprado"), color: C.gold, w: 2.5 },
+      { name: "DC gasto em skins (est.)", values: col("dcGastoSkins"), color: C.danger },
+      { name: "DC dado por admin", values: col("dcAdmin"), color: C.dim, dashed: true },
+    ], { fmt: nN }))}
+  </div>
+
+  <div class="section-title">Coortes e horários</div>
+  <div class="grid g2">
+    ${painel("Retenção por coorte de cadastro", tabelaCoortes(G.coortes))}
+    ${painel("Simultâneos por hora (média de 4 semanas)", heatmap(G.heatmap))}
+  </div>
+
+  <div class="section-title">Loja e jogadores</div>
+  <div class="grid g2">
+    ${painel("Funil de pedidos MP", hbars(s.funil, "status", "n"))}
+    ${painel("Métodos de pagamento", hbars(s.metodos, "metodo", "cents", fmtBRL))}
+    ${painel("Pacotes mais vendidos (MP)", hbars(s.porPacote, "packageId", "n"))}
+    ${painel("Pacotes mais vendidos (Play)", hbars(s.porPacotePlay, "packageId", "n"))}
+    ${painel("Skins mais adquiridas", hbars(s.skins.map((x) => ({ ...x, skin: `skin ${x.skinId}` })), "skin", "n"))}
+    ${painel("Distribuição por nível", hbars(p.niveis, "faixa", "n"))}
+    <div class="panel" style="grid-column:1/-1"><div class="ph"><h2>Ranking</h2>
+      <select id="rtop" class="sm">${[["kills", "Kills"], ["level", "Nível"], ["headshots", "Headshots"], ["balanceDC", "Saldo DC"], ["balanceDS", "Saldo DS"]].map(([k, l]) => `<option value="${k}" ${k === top ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+      ${table([
+        { h: "#", f: (x) => x.pos },
+        { h: "Jogador", f: (x) => playerLink(x.playerId, x.playerName) },
+        { h: "Nível", f: (x) => x.level, num: true },
+        { h: "K/D", f: (x) => `${x.kills}/${x.deaths}`, num: true },
+        { h: "HS", f: (x) => x.headshots, num: true },
+        { h: "DC", f: (x) => fmtN(x.balanceDC), num: true },
+        { h: "DS", f: (x) => fmtN(x.balanceDS), num: true },
+      ], ranking)}</div>
+  </div>`;
+}
+
+VIEWS.reports = async function () {
+  let days = Number(sessionStorage.getItem("decay.repDays")) || 30;
+  let top = "kills";
+  let G = null;
+
+  setMain(`<div class="top"><div><h1>Relatórios</h1><p>Crescimento, retenção, monetização e população, com a seção "Agora" ao vivo.</p></div>
+    <div class="row"><span id="liveBadge" class="tag">conectando…</span>
+      <select id="rdays" class="sm">${[7, 14, 30, 60, 90, 180, 365].map((d) => `<option value="${d}" ${d === days ? "selected" : ""}>${d} dias</option>`).join("")}</select>
+      <button class="btn" data-act="csvdia">CSV diário</button><button class="btn" data-act="csv">CSV de vendas</button></div></div>
+    <div id="live"><p class="hint">Conectando ao vivo…</p></div>
+    <div id="rep"><p class="hint">Calculando relatórios…</p></div>`);
+
+  const badge = (ok, txt) => {
+    const b = $("#liveBadge");
+    if (b) { b.className = `tag ${ok ? "ok" : "danger"}`; b.textContent = txt; }
+  };
+
+  async function load() {
+    const [g, s, p] = await Promise.all([
+      api(`/reports/growth?days=${days}`),
+      api(`/reports/sales?days=${days}`),
+      api(`/reports/players?days=${days}&top=${top}`),
+    ]);
+    G = g;
+    const rep = $("#rep");
+    if (!rep) return;
+    rep.innerHTML = renderReports(g, s, p, top);
+    const sel = $("#rtop");
+    if (sel) sel.onchange = (e) => { top = e.target.value; load(); };
+  }
+
+  S.es?.close();
+  S.es = new EventSource(`${S.base}/admin/api/reports/stream?key=${encodeURIComponent(S.key)}`);
+  S.es.onmessage = (ev) => { badge(true, "ao vivo"); renderLive(JSON.parse(ev.data)); };
+  S.es.onerror = () => badge(false, "reconectando…");
+
+  $("#rdays").onchange = (e) => {
+    days = +e.target.value;
+    sessionStorage.setItem("decay.repDays", days);
+    $("#rep").innerHTML = `<p class="hint">Calculando relatórios…</p>`;
+    load();
+  };
+
+  ACTIONS.csvdia = () => {
+    if (!G) return;
+    const cols = ["day", "dau", "media7", "jogaram", "novos", "retornantes", "ressurgidos", "retornoPct", "comprasMp", "comprasPlay",
+      "receitaMp", "receitaPlayEst", "receita", "pagantes", "novosPagantes", "ccuPico", "ccuMedio", "dcComprado", "dcGastoSkins", "dcAdmin"];
+    const lines = [cols.join(";"), ...G.serie.map((r) => cols.map((c) => (r[c] == null ? "" : String(r[c]).replace(".", ","))).join(";"))];
+    baixarCSV(lines, `diario-${days}d.csv`);
+  };
   ACTIONS.csv = async () => {
     const r = await api(`/orders?provider=mp&status=approved&hours=${days * 24}&limit=500`);
-    const lines = ["orderId;playerId;playerName;packageId;totalDC;priceBRL;paymentMethod;createdAt;creditedAt", ...r.rows.map((o) => [o.orderId, o.playerId, o.playerName || "", o.packageId, o.amountDC + o.bonusDC, (o.priceCents / 100).toFixed(2).replace(".", ","), o.paymentMethod || "", new Date(o.createdAt * 1000).toISOString(), o.creditedAt ? new Date(o.creditedAt * 1000).toISOString() : ""].join(";"))];
-    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv" })); a.download = `vendas-mp-${days}d.csv`; a.click();
+    const lines = ["orderId;playerId;playerName;packageId;totalDC;priceBRL;paymentMethod;createdAt;creditedAt",
+      ...r.rows.map((o) => [o.orderId, o.playerId, o.playerName || "", o.packageId, o.amountDC + o.bonusDC,
+        (o.priceCents / 100).toFixed(2).replace(".", ","), o.paymentMethod || "",
+        new Date(o.createdAt * 1000).toISOString(), o.creditedAt ? new Date(o.creditedAt * 1000).toISOString() : ""].join(";"))];
+    baixarCSV(lines, `vendas-mp-${days}d.csv`);
     if (r.total > 500) toast("Exportados os 500 mais recentes.", "warn");
   };
+
   await load();
+  S.timers.push(setInterval(() => load().catch(() => {}), 60000));
 };
 
 /* ═══════════════════════════════ SKINS ═══════════════════════════════ */
@@ -842,6 +1143,163 @@ VIEWS.skins = async function () {
     $("[data-x]", box).onclick = closeModal;
     $("#kGo", box).onclick = async () => { let list; try { list = JSON.parse($("#kJson", box).value); } catch (e) { return toast(`JSON inválido: ${e.message}`, "err"); } await api("/skins", { method: "PUT", body: { skins: list } }); closeModal(); toast("Catálogo substituído."); load(); };
   };
+  await load();
+};
+
+/* ═══════════════════════════════ POP-UPS ═══════════════════════════════ */
+
+const POPUP_FREQ = [
+  ["always", "Sempre que abrir o menu"],
+  ["once", "Uma vez por arte"],
+  ["daily", "Uma vez por dia"],
+];
+const POPUP_PLATS = ["android", "ios", "windows", "osx"];
+
+const dtLocal = (s) => {
+  if (!s) return "";
+  const d = new Date(s * 1000), p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+const dtEpoch = (v) => (v ? Math.floor(new Date(v).getTime() / 1000) : null);
+
+/* upload vai como binário cru: o express.json global ignora image/*  */
+async function uploadImagemPopup(popupId, file) {
+  const res = await fetch(`${S.base}/admin/api/popups/${encodeURIComponent(popupId)}/image`, {
+    method: "POST",
+    headers: { "Content-Type": file.type, "X-Admin-Key": S.key },
+    body: file,
+  });
+  let j = null;
+  try { j = await res.json(); } catch { /* vazio */ }
+  if (!res.ok || j?.ok === false) throw new Error(j?.error || `${res.status} ${res.statusText}`);
+  return j;
+}
+
+VIEWS.popups = async function () {
+  let lista = [];
+
+  async function load() {
+    const r = await api("/popups");
+    lista = r.popups;
+    $("#ppInfo").textContent = `${lista.length} pop-up(s) · ${lista.filter((p) => p.enabled !== false).length} ativo(s) · revisão ${r.revision}`;
+    $("#pplist").innerHTML = table([
+      { h: "#", f: (p) => p.order },
+      { h: "Arte", f: (p) => `<img src="${esc(p.imageUrl)}" alt="" style="height:38px;border-radius:4px;display:block">` },
+      { h: "Pop-up", f: (p) => `<b>${esc(p.titulo || p.popupId)}</b><br><span class="hint mono">${esc(p.popupId)} · ${esc(p.imageHash)}</span>` },
+      { h: "Botão", f: (p) => p.linkUrl ? `<a href="${esc(p.linkUrl)}" target="_blank" rel="noopener">${esc(p.buttonText || "abrir link")}</a>` : '<span class="hint">só fechar</span>' },
+      { h: "Frequência", f: (p) => `<span class="tag">${esc((POPUP_FREQ.find((f) => f[0] === p.frequency) || [, p.frequency])[1])}</span>` },
+      { h: "Período", f: (p) => p.startAt || p.endAt ? `${p.startAt ? fmtDT(p.startAt) : "—"} → ${p.endAt ? fmtDT(p.endAt) : "—"}` : '<span class="hint">sempre</span>' },
+      { h: "Alvo", f: (p) => (p.platforms?.length ? p.platforms : ["todas"]).map((x) => `<span class="tag">${esc(x)}</span>`).join(" ") },
+      { h: "Status", f: (p) => p.enabled === false ? '<span class="tag">desligado</span>' : '<span class="tag ok">no ar</span>' },
+      { h: "", f: (p, i) => `<button class="btn sm" data-act="up" data-id="${esc(p.popupId)}">↑</button>
+        <button class="btn sm" data-act="down" data-id="${esc(p.popupId)}">↓</button>
+        <button class="btn sm" data-act="edit" data-id="${esc(p.popupId)}">Editar</button>
+        <button class="btn sm" data-act="touch" data-id="${esc(p.popupId)}">Forçar download</button>
+        <button class="btn sm d" data-act="rm" data-id="${esc(p.popupId)}">Excluir</button>` },
+    ], lista, { empty: "Nenhum pop-up. Crie o primeiro — ele aparece no menu do jogo no próximo boot do jogador." });
+    bindActions($("#pplist"));
+  }
+
+  const form = (p = {}) => {
+    const novo = !p.popupId;
+    let imageUrl = p.imageUrl || "", imageHash = p.imageHash || "";
+
+    const box = modal(`<h2>${novo ? "Novo pop-up" : esc(p.titulo || p.popupId)}</h2>
+      <div class="grid g2">
+        <div class="f"><label>popupId</label><input type="text" id="ppId" value="${esc(p.popupId || "")}" ${novo ? "" : "readonly"} placeholder="skins-outubro">
+          <span class="sub">Identidade fixa. Trocar o id faz o jogador ver o pop-up de novo.</span></div>
+        <div class="f"><label>Título (só para o painel)</label><input type="text" id="ppTitulo" value="${esc(p.titulo || "")}"></div>
+      </div>
+      <div class="f" style="margin-top:10px"><label>Imagem</label>
+        <div class="row" style="flex-wrap:nowrap"><input type="text" id="ppUrl" value="${esc(imageUrl)}" placeholder="https://… ou envie um arquivo">
+          <input type="file" id="ppFile" accept="image/png,image/jpeg,image/webp" style="display:none">
+          <button class="btn sm" id="ppPick">Enviar arquivo</button></div>
+        <span class="sub" id="ppHash">${imageHash ? `hash atual: ${esc(imageHash)}` : "PNG, JPG ou WebP, até 8 MB."}</span></div>
+      <img id="ppPrev" src="${esc(imageUrl)}" style="max-height:140px;margin-top:10px;border-radius:6px;${imageUrl ? "" : "display:none"}">
+      <div class="grid g2" style="margin-top:10px">
+        <div class="f"><label>Link do botão (vazio = sem botão)</label><input type="text" id="ppLink" value="${esc(p.linkUrl || "")}" placeholder="https://discord.gg/…"></div>
+        <div class="f"><label>Texto do botão</label><input type="text" id="ppBtn" value="${esc(p.buttonText || "")}" placeholder="Ver skins"></div>
+        <div class="f"><label>Frequência</label><select id="ppFreq">${POPUP_FREQ.map(([k, l]) => `<option value="${k}" ${k === (p.frequency || "always") ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+        <div class="f"><label>Ordem</label><input type="number" id="ppOrder" value="${p.order ?? ""}" placeholder="último"></div>
+        <div class="f"><label>Começa em (opcional)</label><input type="datetime-local" id="ppStart" value="${dtLocal(p.startAt)}"></div>
+        <div class="f"><label>Termina em (opcional)</label><input type="datetime-local" id="ppEnd" value="${dtLocal(p.endAt)}"></div>
+      </div>
+      <div class="f" style="margin-top:10px"><label>Plataformas (nenhuma marcada = todas)</label>
+        <div class="row">${POPUP_PLATS.map((x) => `<label class="check"><input type="checkbox" data-plat="${x}" ${p.platforms?.includes(x) ? "checked" : ""}> ${x}</label>`).join("")}</div></div>
+      <div class="f" style="margin-top:10px"><label>Builds do cliente (uma por linha, vazio = todas)</label>
+        <textarea id="ppBuilds" class="code" style="min-height:60px">${esc((p.builds || []).join("\n"))}</textarea></div>
+      <label class="check" style="margin-top:10px"><input type="checkbox" id="ppOn" ${p.enabled !== false ? "checked" : ""}> No ar</label>
+      <div class="acts"><button class="btn" data-x>Cancelar</button><button class="btn p" id="ppGo">Salvar</button></div>`, { wide: true });
+
+    $("[data-x]", box).onclick = closeModal;
+    $("#ppPick", box).onclick = () => {
+      const id = $("#ppId", box).value.trim();
+      if (!id) return toast("Preencha o popupId antes de enviar a arte.", "warn");
+      $("#ppFile", box).click();
+    };
+    $("#ppFile", box).onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const r = await uploadImagemPopup($("#ppId", box).value.trim(), file);
+        imageUrl = r.imageUrl; imageHash = r.imageHash;
+        $("#ppUrl", box).value = imageUrl;
+        $("#ppHash", box).textContent = `enviada: ${Math.round(r.bytes / 1024)} KB · hash ${r.imageHash}`;
+        const prev = $("#ppPrev", box); prev.src = imageUrl; prev.style.display = "";
+        toast("Imagem enviada.");
+      } catch (err) { toast(err.message, "err"); }
+    };
+    $("#ppUrl", box).onchange = () => {
+      imageUrl = $("#ppUrl", box).value.trim(); imageHash = "";
+      const prev = $("#ppPrev", box); prev.src = imageUrl; prev.style.display = imageUrl ? "" : "none";
+    };
+    $("#ppGo", box).onclick = async () => {
+      const body = {
+        popupId: $("#ppId", box).value.trim(),
+        titulo: $("#ppTitulo", box).value.trim(),
+        imageUrl: $("#ppUrl", box).value.trim(),
+        imageHash: imageHash || undefined,
+        linkUrl: $("#ppLink", box).value.trim(),
+        buttonText: $("#ppBtn", box).value.trim(),
+        frequency: $("#ppFreq", box).value,
+        order: $("#ppOrder", box).value === "" ? undefined : +$("#ppOrder", box).value,
+        startAt: dtEpoch($("#ppStart", box).value),
+        endAt: dtEpoch($("#ppEnd", box).value),
+        platforms: $$("[data-plat]", box).filter((c) => c.checked).map((c) => c.dataset.plat),
+        builds: $("#ppBuilds", box).value.split("\n").map((s) => s.trim()).filter(Boolean),
+        enabled: $("#ppOn", box).checked,
+      };
+      await api("/popups", { method: "POST", body });
+      closeModal(); toast("Pop-up salvo. Vale no próximo boot do jogador."); load();
+    };
+  };
+
+  const mover = async (id, delta) => {
+    const ids = lista.map((p) => p.popupId);
+    const i = ids.indexOf(id), j = i + delta;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    await api("/popups/reorder", { method: "POST", body: { ids } });
+    load();
+  };
+
+  setMain(`<div class="top"><div><h1>Pop-ups</h1><p id="ppInfo"></p></div>
+      <div class="row"><button class="btn" data-act="reload">Atualizar</button><button class="btn p" data-act="new">Novo pop-up</button></div></div>
+    <p class="hint" style="margin:0 0 12px">Os pop-ups aparecem em ordem quando o jogador abre o menu principal. A arte fica salva no aparelho: trocar a imagem aqui (ou usar "Forçar download") faz o cliente baixar a nova e apagar a antiga sozinho.</p>
+    <div id="pplist"></div>`);
+
+  ACTIONS.reload = load;
+  ACTIONS.new = () => form();
+  ACTIONS.edit = (d) => form(lista.find((p) => p.popupId === d.id));
+  ACTIONS.up = (d) => mover(d.id, -1);
+  ACTIONS.down = (d) => mover(d.id, 1);
+  ACTIONS.touch = async (d) => { await api(`/popups/${encodeURIComponent(d.id)}/touch`, { method: "POST", body: {} }); toast("Todos os jogadores vão rebaixar essa arte."); load(); };
+  ACTIONS.rm = async (d) => {
+    if (await confirmar("Excluir pop-up", `Remove <b>${esc(d.id)}</b> da rotação. A arte sai do disco dos jogadores no próximo boot.`, { danger: true, okLabel: "Excluir" })) {
+      await api(`/popups/${encodeURIComponent(d.id)}`, { method: "DELETE" }); toast("Excluído."); load();
+    }
+  };
+
   await load();
 };
 

@@ -6,15 +6,17 @@
   "adminKey": "d5c9912f2159091e887aa37b9d8e73bac55bf6885e8687f1a6ab1ad325b03569",
   "tokenTTLSeconds": 60,
   "heartbeatTTLSeconds": 90,
+  "popupsStorePath": "popups.json",
+  "popupImagesDir": "popup-images",
   "rateLimit": {
     "windowSeconds": 60,
     "maxRequests": 100
   },
   "allowedClientBuilds": [
-    "3708"
+    "3716"
   ],
   "latestClientBuild": {
-    "version": "3708",
+    "version": "3716",
     "sizeMB": 480,
     "changelog": [
       "Sistema de sons melhorado, com áudio a longas distâncias.",

@@ -1,22 +1,3 @@
-// ============================================================================
-// admin-routes.js — API do painel administrativo do DECAY Master Server
-//
-// Uso no server.js (depois de criar playWatcher e ANTES de `new WebSocketServer`):
-//
-//   const { registrarRotasAdmin } = require("./admin-routes");
-//   registrarRotasAdmin(app, {
-//     config, logger, store, authStore, banStore, pushStore, fcm,
-//     shopStore, googleShop, skinCatalog, chatClients, playWatcher,
-//     rateLimiter, kickFromChat, onCredited,
-//   });
-//
-// master.config.json (novo campo, opcional mas recomendado):
-//   "adminKey": "outra-chave-longa-e-secreta"
-//
-// Painel: GET /admin  (serve public/admin.html)
-// API:    /admin/api/*  — header X-Admin-Key
-// ============================================================================
-
 "use strict";
 
 const fs = require("fs");
@@ -165,6 +146,582 @@ function aplicarPacotes(list) {
 }
 
 // ============================================================================
+// RELATÓRIOS — relógio local, rastreio de atividade, população e crescimento
+// ============================================================================
+
+const RETENCAO_DIAS = [1, 3, 7, 14, 30];
+
+// Fixado no boot: mudar o fuso depois embaralha os dias já gravados.
+function criarRelogioLocal(config) {
+  const off = Number.isFinite(config.reportsUtcOffsetMinutes) ? config.reportsUtcOffsetMinutes : -180;
+  return {
+    offsetMin: off,
+    mod: `${off} minutes`,
+    dia: (ts = nowSeconds()) => new Date((ts + off * 60) * 1000).toISOString().slice(0, 10),
+    inicioDia: (ts = nowSeconds()) => Math.floor((ts + off * 60) / 86400) * 86400 - off * 60,
+  };
+}
+
+function diasEntre(a, b) {
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
+}
+
+function instalarRastreioDeAtividade(db, authStore, relogio, logger) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS player_daily_activity (
+      playerId    INTEGER NOT NULL,
+      day         TEXT    NOT NULL,
+      firstSeenAt INTEGER NOT NULL,           -- primeiro login do dia
+      lastSeenAt  INTEGER NOT NULL,           -- último login do dia
+      logins      INTEGER NOT NULL DEFAULT 1, -- quantos logins no dia
+      played      INTEGER NOT NULL DEFAULT 0, -- 1 = game server reportou partida nesse dia
+      PRIMARY KEY (playerId, day)
+    );
+    CREATE INDEX IF NOT EXISTS idx_pda_day ON player_daily_activity(day);
+    CREATE TABLE IF NOT EXISTS report_meta (k TEXT PRIMARY KEY, v TEXT);
+  `);
+
+  // migração da versão anterior (coluna "hits" → "logins")
+  const cols = db.prepare(`PRAGMA table_info(player_daily_activity)`).all().map((c) => c.name);
+  if (!cols.includes("logins")) {
+    db.exec(`ALTER TABLE player_daily_activity ADD COLUMN logins INTEGER NOT NULL DEFAULT 1`);
+  }
+
+  const vazia = db.prepare(`SELECT COUNT(*) c FROM player_daily_activity`).get().c === 0;
+  db.prepare(`INSERT OR IGNORE INTO report_meta (k, v) VALUES ('activity_since', ?)`).run(relogio.dia());
+
+  const upsertLogin = db.prepare(`
+    INSERT INTO player_daily_activity (playerId, day, firstSeenAt, lastSeenAt, logins, played)
+    VALUES (?, ?, ?, ?, 1, 0)
+    ON CONFLICT(playerId, day) DO UPDATE SET
+      lastSeenAt = excluded.lastSeenAt,
+      logins = logins + 1`);
+
+  // partida só marca o dia se o jogador já logou nele (não cria dia ativo sozinha)
+  const marcarPartida = db.prepare(`
+    UPDATE player_daily_activity SET played = 1
+    WHERE playerId = ? AND day = ? AND played = 0`);
+
+  const registrarLogin = (playerId) => {
+    const id = Number(playerId);
+    if (!Number.isInteger(id) || id <= 0) return;
+    const now = nowSeconds();
+    try {
+      upsertLogin.run(id, relogio.dia(now), now, now);
+    } catch (e) {
+      logger.warn(`[Relatórios] falha ao registrar login de ${id}: ${e.message}`);
+    }
+  };
+
+  const partidasMarcadas = new Set();
+  const registrarPartida = (playerId) => {
+    const id = Number(playerId);
+    if (!Number.isInteger(id) || id <= 0) return;
+    const day = relogio.dia();
+    const key = `${id}:${day}`;
+    if (partidasMarcadas.has(key)) return;
+    try {
+      if (marcarPartida.run(id, day).changes > 0) partidasMarcadas.add(key);
+    } catch (e) {
+      logger.warn(`[Relatórios] falha ao marcar partida de ${id}: ${e.message}`);
+    }
+    if (partidasMarcadas.size > 100000) partidasMarcadas.clear();
+  };
+
+  const envolver = (nome, depois) => {
+    const original = authStore[nome];
+    if (typeof original !== "function") {
+      logger.warn(`[Relatórios] authStore.${nome} não existe — rastreio parcial`);
+      return;
+    }
+    authStore[nome] = function (...args) {
+      const r = original.apply(this, args);
+      try { depois(args, r); } catch { /* nunca quebra o fluxo original */ }
+      return r;
+    };
+  };
+  // _createSession roda em todo login/registro (email, guest, login/guest)
+  envolver("_createSession", ([playerId]) => registrarLogin(playerId));
+  envolver("updateStats", ([playerId]) => registrarPartida(playerId));
+  envolver("addXP", ([playerId]) => registrarPartida(playerId));
+  // validateSession NÃO é envolvido: o chat usa ele. O /auth/validate-session registra explicitamente.
+
+  if (vazia) {
+    const fontes = [
+      `SELECT playerId, createdAt ts FROM accounts`, // registro = primeiro login
+      `SELECT playerId, createdAt ts FROM sessions`, // último login de cada jogador
+    ];
+    let total = 0;
+    for (const sql of fontes) {
+      try {
+        total += db.prepare(`
+          INSERT OR IGNORE INTO player_daily_activity (playerId, day, firstSeenAt, lastSeenAt, logins, played)
+          SELECT playerId, date(ts, 'unixepoch', ?), ts, ts, 1, 0 FROM (${sql})
+          WHERE playerId IS NOT NULL AND ts IS NOT NULL`).run(relogio.mod).changes;
+      } catch (e) {
+        logger.warn(`[Relatórios] backfill ignorou fonte: ${e.message}`);
+      }
+    }
+    logger.info(`[Relatórios] backfill: ${total} dia(s)-jogador estimados a partir de cadastros e sessões`);
+  }
+
+  return { registrarLogin, registrarPartida };
+}
+
+function populacaoAgora(store, config) {
+  const now = nowSeconds();
+  let ccu = 0, servers = 0;
+  for (const s of store.servers.values()) {
+    if (now - s.lastHeartbeatAt <= config.heartbeatTTLSeconds) {
+      servers++;
+      ccu += s.playersOnline || 0;
+    }
+  }
+  return { ccu, servers };
+}
+
+function iniciarAmostragemPopulacao(db, store, config, logger) {
+  const cols = db.prepare(`PRAGMA table_info(population_samples)`).all().map((c) => c.name);
+  if (cols.includes("chat")) {
+    // migração: remove a coluna do chat preservando as amostras
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE population_samples_new (ts INTEGER PRIMARY KEY, ccu INTEGER NOT NULL, servers INTEGER NOT NULL);
+        INSERT INTO population_samples_new (ts, ccu, servers) SELECT ts, ccu, servers FROM population_samples;
+        DROP TABLE population_samples;
+        ALTER TABLE population_samples_new RENAME TO population_samples;
+      `);
+    })();
+    logger.info("[Relatórios] population_samples migrada (coluna chat removida)");
+  } else {
+    db.exec(`CREATE TABLE IF NOT EXISTS population_samples (
+      ts INTEGER PRIMARY KEY, ccu INTEGER NOT NULL, servers INTEGER NOT NULL)`);
+  }
+
+  const ins = db.prepare(`INSERT OR REPLACE INTO population_samples (ts, ccu, servers) VALUES (?, ?, ?)`);
+  const prune = db.prepare(`DELETE FROM population_samples WHERE ts < ?`);
+  let n = 0;
+  const tick = () => {
+    try {
+      const p = populacaoAgora(store, config);
+      ins.run(Math.floor(nowSeconds() / 60) * 60, p.ccu, p.servers);
+      if (++n % 60 === 0) prune.run(nowSeconds() - 400 * 86400);
+    } catch (e) {
+      logger.warn(`[Relatórios] falha na amostragem de população: ${e.message}`);
+    }
+  };
+  tick();
+  const t = setInterval(tick, 60000);
+  t.unref?.();
+}
+
+function tendenciaSemanal(vals) {
+  const n = vals.length;
+  if (n < 7) return null;
+  const mx = (n - 1) / 2;
+  const my = vals.reduce((a, b) => a + b, 0) / n;
+  if (!my) return null;
+  let num = 0, den = 0;
+  vals.forEach((y, i) => { num += (i - mx) * (y - my); den += (i - mx) ** 2; });
+  return den ? ((num / den) * 7) / my : null;
+}
+
+function calcularVeredito(A, P, RA, RP, extra) {
+  const rel = (a, b) => (a == null || b == null || !b ? null : (a - b) / b);
+  const dif = (a, b) => (a == null || b == null ? null : a - b);
+  const semBase = !extra.baseConfiavel;
+  const sinais = [
+    { nome: "Jogadores ativos/dia", v: semBase ? null : rel(A.dauMedio, P.dauMedio), peso: 3, nota: "aguardando histórico" },
+    { nome: "Tendência do DAU", v: extra.tendenciaDAU, peso: 2, sufixo: "por semana", nota: "poucos dias rastreados" },
+    { nome: "Novas contas/dia", v: rel(A.novosDia, P.novosDia), peso: 2 },
+    { nome: "Voltaram no dia seguinte", v: semBase ? null : dif(A.retornoD1, P.retornoD1), pp: true, peso: 2, nota: "aguardando histórico" },
+    { nome: "Retenção D1 de contas novas", v: dif(RA.d1, RP.d1), pp: true, peso: 2 },
+    { nome: "Receita", v: rel(A.receita, P.receita), peso: 2 },
+    { nome: "Pagantes únicos", v: rel(A.pagantes, P.pagantes), peso: 1 },
+    { nome: "MAU (30 dias)", v: extra.mauConfiavel ? rel(extra.mau, extra.mauAnterior) : null, peso: 1, nota: "aguardando 60 dias" },
+  ];
+  let soma = 0, pesos = 0;
+  for (const s of sinais) {
+    if (s.v == null || !Number.isFinite(s.v)) { s.v = null; continue; }
+    // p.p. de retenção pesa mais: +2 p.p. ≈ +10%
+    soma += Math.max(-0.5, Math.min(0.5, s.pp ? s.v * 5 : s.v)) * s.peso;
+    pesos += s.peso;
+  }
+  const score = pesos >= 4 ? soma / pesos : null;
+  let classe = "flat", titulo = "Estável", resumo;
+  if (score == null) {
+    titulo = "Dados insuficientes";
+    resumo = "Ainda não há histórico suficiente para comparar os períodos.";
+  } else {
+    if (score > 0.05) { classe = "up"; titulo = "Crescendo"; }
+    else if (score < -0.05) { classe = "down"; titulo = "Caindo"; }
+    resumo = `Índice ${score >= 0 ? "+" : ""}${(score * 100).toFixed(1)}% — média ponderada de ${sinais.filter((s) => s.v != null).length} sinais`;
+  }
+  return { score, classe, titulo, resumo, sinais: sinais.map(({ peso, ...s }) => s) };
+}
+
+function montarRelatorioCrescimento(ctx, days) {
+  const { db, relogio, skinCatalog } = ctx;
+  const m = relogio.mod;
+  const dia = relogio.dia;
+  const hoje0 = relogio.inicioDia();
+  const ini = hoje0 - days * 86400;
+  const iniPrev = ini - days * 86400;
+  const hoje = dia(hoje0);
+  const ontem = dia(hoje0 - 86400);
+  const lista = (from, n) => Array.from({ length: n }, (_, i) => dia(from + i * 86400));
+  const diasAtual = lista(ini, days);
+  const diasPrev = lista(iniPrev, days);
+  const rastreioDesde = db.prepare(`SELECT v FROM report_meta WHERE k = 'activity_since'`).get()?.v || hoje;
+  const preco = new Map(DC_PACKAGES.map((p) => [p.packageId, p.priceCents]));
+  const q = (sql, ...p) => db.prepare(sql).all(...p);
+  const one = (sql, ...p) => db.prepare(sql).get(...p);
+  const mapa = (rows) => new Map(rows.map((r) => [r.day, r]));
+
+  const PAGAMENTOS = `
+    SELECT playerId, creditedAt ts FROM dc_orders WHERE status='approved' AND creditedAt IS NOT NULL
+    UNION ALL
+    SELECT playerId, creditedAt ts FROM play_orders WHERE status='credited' AND creditedAt IS NOT NULL`;
+
+  // ── séries por dia (período anterior + atual, só dias completos) ──
+  const dau = mapa(q(`SELECT day, COUNT(*) dau, COALESCE(SUM(played),0) jogaram, COALESCE(SUM(logins),0) logins
+                      FROM player_daily_activity WHERE day >= ? AND day < ? GROUP BY day`, diasPrev[0], hoje));
+  const novos = mapa(q(`SELECT date(createdAt,'unixepoch',?) day, COUNT(*) n, SUM(accountType='guest') guests
+                        FROM accounts WHERE createdAt >= ? AND createdAt < ? GROUP BY day`, m, iniPrev, hoje0));
+  const mp = mapa(q(`SELECT date(creditedAt,'unixepoch',?) day, COUNT(*) n, COALESCE(SUM(priceCents),0) cents,
+                            COALESCE(SUM(amountDC + bonusDC),0) dc
+                     FROM dc_orders WHERE status='approved' AND creditedAt >= ? AND creditedAt < ? GROUP BY day`, m, iniPrev, hoje0));
+  const play = new Map();
+  for (const r of q(`SELECT date(creditedAt,'unixepoch',?) day, productId, COUNT(*) n, COALESCE(SUM(quantity),0) qn,
+                            COALESCE(SUM(totalDC),0) dc
+                     FROM play_orders WHERE status='credited' AND creditedAt >= ? AND creditedAt < ?
+                     GROUP BY day, productId`, m, iniPrev, hoje0)) {
+    const a = play.get(r.day) || { n: 0, dc: 0, cents: 0 };
+    a.n += r.n;
+    a.dc += r.dc;
+    a.cents += (preco.get(r.productId) || 0) * (r.qn || r.n);
+    play.set(r.day, a);
+  }
+  const pagantes = mapa(q(`SELECT date(ts,'unixepoch',?) day, COUNT(DISTINCT playerId) n FROM (${PAGAMENTOS})
+                           WHERE ts >= ? AND ts < ? GROUP BY day`, m, iniPrev, hoje0));
+  const novosPagantes = mapa(q(`SELECT date(p,'unixepoch',?) day, COUNT(*) n
+                                FROM (SELECT playerId, MIN(ts) p FROM (${PAGAMENTOS}) GROUP BY playerId)
+                                WHERE p >= ? AND p < ? GROUP BY day`, m, iniPrev, hoje0));
+  const ccu = mapa(q(`SELECT date(ts,'unixepoch',?) day, MAX(ccu) pico, AVG(ccu) media
+                      FROM population_samples WHERE ts >= ? AND ts < ? GROUP BY day`, m, iniPrev, hoje0));
+  // logou no dia X e logou de novo no dia X+1
+  const voltou = mapa(q(`SELECT a.day, COUNT(*) base, SUM(b.playerId IS NOT NULL) voltou
+                         FROM player_daily_activity a
+                         LEFT JOIN player_daily_activity b ON b.playerId = a.playerId AND b.day = date(a.day, '+1 day')
+                         WHERE a.day >= ? AND a.day < ? GROUP BY a.day`, diasPrev[0], hoje));
+  // logou depois de 7+ dias sem logar (conta com mais de 7 dias)
+  const ressurgidos = mapa(q(`
+    SELECT a.day, COUNT(*) n FROM player_daily_activity a
+    WHERE a.day >= ? AND a.day < ?
+      AND NOT EXISTS (SELECT 1 FROM player_daily_activity b
+                      WHERE b.playerId = a.playerId AND b.day < a.day AND b.day >= date(a.day, '-7 day'))
+      AND EXISTS (SELECT 1 FROM accounts c
+                  WHERE c.playerId = a.playerId AND date(c.createdAt, 'unixepoch', ?) < date(a.day, '-7 day'))
+    GROUP BY a.day`, diasPrev[0], hoje, m));
+  const dcAdmin = mapa(q(`SELECT date(createdAt,'unixepoch',?) day, COALESCE(SUM(delta),0) n FROM dc_ledger
+                          WHERE source='admin' AND delta > 0 AND currency='DC' AND createdAt >= ? AND createdAt < ?
+                          GROUP BY day`, m, iniPrev, hoje0));
+  const gasto = new Map();
+  for (const r of q(`SELECT date(acquiredAt,'unixepoch',?) day, skinId, COUNT(*) n FROM skins
+                     WHERE acquiredAt >= ? AND acquiredAt < ? GROUP BY day, skinId`, m, iniPrev, hoje0)) {
+    const e = skinCatalog.get(r.skinId);
+    const a = gasto.get(r.day) || { DC: 0, DS: 0, n: 0 };
+    if (e) a[e.currency] += e.price * r.n;
+    a.n += r.n;
+    gasto.set(r.day, a);
+  }
+
+  const linha = (day) => {
+    const d = dau.get(day), mm = mp.get(day), pp = play.get(day), c = ccu.get(day), v = voltou.get(day), g = gasto.get(day);
+    const dauN = d?.dau || 0, novosN = novos.get(day)?.n || 0;
+    const retornoMaduro = day < ontem && v?.base > 0; // o dia seguinte precisa estar fechado
+    return {
+      day,
+      dau: dauN,
+      logins: d?.logins || 0,
+      jogaram: d?.jogaram || 0,
+      novos: novosN,
+      guests: novos.get(day)?.guests || 0,
+      retornantes: Math.max(0, dauN - novosN),
+      ressurgidos: ressurgidos.get(day)?.n || 0,
+      voltouBase: retornoMaduro ? v.base : 0,
+      voltou: retornoMaduro ? v.voltou : 0,
+      retornoPct: retornoMaduro ? v.voltou / v.base : null,
+      comprasMp: mm?.n || 0,
+      comprasPlay: pp?.n || 0,
+      compras: (mm?.n || 0) + (pp?.n || 0),
+      receitaMp: mm?.cents || 0,
+      receitaPlayEst: pp?.cents || 0,
+      receita: (mm?.cents || 0) + (pp?.cents || 0),
+      pagantes: pagantes.get(day)?.n || 0,
+      novosPagantes: novosPagantes.get(day)?.n || 0,
+      dcComprado: (mm?.dc || 0) + (pp?.dc || 0),
+      dcAdmin: dcAdmin.get(day)?.n || 0,
+      dcGastoSkins: g?.DC || 0,
+      dsGastoSkins: g?.DS || 0,
+      skinsAdquiridas: g?.n || 0,
+      ccuPico: c ? c.pico : null,
+      ccuMedio: c ? Math.round(c.media * 10) / 10 : null,
+    };
+  };
+
+  const todas = [...diasPrev, ...diasAtual].map(linha);
+  todas.forEach((r, i) => {
+    const jan = todas.slice(Math.max(0, i - 6), i + 1);
+    r.media7 = jan.length === 7 ? Math.round((jan.reduce((a, x) => a + x.dau, 0) / 7) * 10) / 10 : null;
+  });
+  const seriePrev = todas.slice(0, days);
+  const serie = todas.slice(days);
+
+  const agregar = (rows, diaA, diaB, tsA, tsB) => {
+    const n = rows.length || 1;
+    const soma = (k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
+    const base = soma("voltouBase"), volt = soma("voltou");
+    const ativos = one(`SELECT COUNT(DISTINCT playerId) c FROM player_daily_activity WHERE day >= ? AND day < ?`, diaA, diaB).c;
+    const pag = one(`SELECT COUNT(DISTINCT playerId) c FROM (${PAGAMENTOS}) WHERE ts >= ? AND ts < ?`, tsA, tsB).c;
+    const comCcu = rows.filter((r) => r.ccuPico != null);
+    const receita = soma("receita"), compras = soma("compras"), dauSoma = soma("dau");
+    return {
+      dauMedio: dauSoma / n,
+      loginsDia: soma("logins") / n,
+      jogaramMedio: soma("jogaram") / n,
+      novos: soma("novos"),
+      novosDia: soma("novos") / n,
+      ressurgidosDia: soma("ressurgidos") / n,
+      ativosUnicos: ativos,
+      retornoD1: base ? volt / base : null,
+      receita,
+      receitaMp: soma("receitaMp"),
+      receitaPlayEst: soma("receitaPlayEst"),
+      receitaDia: receita / n,
+      compras,
+      comprasDia: compras / n,
+      comprasMp: soma("comprasMp"),
+      comprasPlay: soma("comprasPlay"),
+      pagantes: pag,
+      novosPagantes: soma("novosPagantes"),
+      conversao: ativos ? pag / ativos : null,
+      arpdau: dauSoma ? receita / dauSoma : null,
+      arppu: pag ? receita / pag : null,
+      ticket: compras ? receita / compras : null,
+      ccuPico: comCcu.length ? Math.max(...comCcu.map((r) => r.ccuPico)) : null,
+      ccuMedio: comCcu.length ? comCcu.reduce((a, r) => a + r.ccuMedio, 0) / comCcu.length : null,
+      dcComprado: soma("dcComprado"),
+      dcAdmin: soma("dcAdmin"),
+      dcGastoSkins: soma("dcGastoSkins"),
+    };
+  };
+  const atual = agregar(serie, diasAtual[0], hoje, ini, hoje0);
+  const anterior = agregar(seriePrev, diasPrev[0], diasAtual[0], iniPrev, ini);
+
+  // ── coortes de retenção (conta criada no dia X, logou exatamente no dia X+N) ──
+  const coortesDesde = hoje0 - (30 + 2 * days + 1) * 86400;
+  const coortes = q(`
+    SELECT c.day, COUNT(*) size,
+      ${RETENCAO_DIAS.map((n) => `SUM(EXISTS(SELECT 1 FROM player_daily_activity d
+        WHERE d.playerId = c.playerId AND d.day = date(c.day, '+${n} day'))) d${n}`).join(",\n      ")}
+    FROM (SELECT playerId, date(createdAt, 'unixepoch', ?) day FROM accounts WHERE createdAt >= ? AND createdAt < ?) c
+    GROUP BY c.day ORDER BY c.day DESC`, m, coortesDesde, hoje0)
+    .map((c) => {
+      const idade = diasEntre(c.day, hoje);
+      for (const n of RETENCAO_DIAS) if (idade <= n) c[`d${n}`] = null;
+      return c;
+    });
+  const retJanela = (desloc) => {
+    const out = {};
+    for (const n of RETENCAO_DIAS) {
+      const b = dia(hoje0 - (n + desloc) * 86400);
+      const a = dia(hoje0 - (n + desloc + days) * 86400);
+      let s = 0, r = 0;
+      for (const c of coortes) {
+        if (c.day >= a && c.day < b && c[`d${n}`] != null) { s += c.size; r += c[`d${n}`]; }
+      }
+      out[`d${n}`] = s ? r / s : null;
+      out[`base${n}`] = s;
+    }
+    return out;
+  };
+  const retencao = { atual: retJanela(0), anterior: retJanela(days) };
+
+  // ── audiência ──
+  const distintos = (a, b) => one(`SELECT COUNT(DISTINCT playerId) c FROM player_daily_activity WHERE day >= ? AND day <= ?`, a, b).c;
+  const mau = distintos(dia(hoje0 - 30 * 86400), ontem);
+  const mauAnterior = distintos(dia(hoje0 - 60 * 86400), dia(hoje0 - 31 * 86400));
+  const wau = distintos(dia(hoje0 - 7 * 86400), ontem);
+  const dau7 = one(`SELECT COUNT(*) / 7.0 c FROM player_daily_activity WHERE day >= ? AND day <= ?`, dia(hoje0 - 7 * 86400), ontem).c;
+  const mauConfiavel = dia(hoje0 - 60 * 86400) >= rastreioDesde;
+  const audiencia = { wau, mau, mauAnterior, dau7, stickiness: mau ? dau7 / mau : null, mauConfiavel };
+
+  const confiaveis = serie.filter((r) => r.day >= rastreioDesde);
+  const tendenciaDAU = tendenciaSemanal(confiaveis.map((r) => r.dau));
+  const baseConfiavel = diasPrev[0] >= rastreioDesde;
+
+  // ── mapa de horários (média de jogadores em partida por dia da semana × hora, 4 semanas) ──
+  const heatmap = q(`SELECT CAST(strftime('%w', ts, 'unixepoch', ?) AS INTEGER) dow,
+                            CAST(strftime('%H', ts, 'unixepoch', ?) AS INTEGER) h,
+                            AVG(ccu) m, MAX(ccu) mx
+                     FROM population_samples WHERE ts >= ? GROUP BY dow, h`, m, m, hoje0 - 28 * 86400);
+
+  // ── totais desde o início ──
+  const mpTot = one(`SELECT COUNT(*) n, COALESCE(SUM(priceCents),0) c FROM dc_orders WHERE status='approved'`);
+  let comprasPlay = 0, receitaPlayEst = 0;
+  for (const x of q(`SELECT productId, COUNT(*) n, COALESCE(SUM(quantity),0) qn FROM play_orders
+                     WHERE status='credited' GROUP BY productId`)) {
+    comprasPlay += x.n;
+    receitaPlayEst += (preco.get(x.productId) || 0) * (x.qn || x.n);
+  }
+  const totais = {
+    contas: one(`SELECT COUNT(*) c FROM accounts`).c,
+    primeiraConta: one(`SELECT MIN(createdAt) c FROM accounts`).c,
+    pedidosMp: mpTot.n,
+    receitaMp: mpTot.c,
+    comprasPlay,
+    receitaPlayEst,
+    receita: mpTot.c + receitaPlayEst,
+    pagantes: one(`SELECT COUNT(DISTINCT playerId) c FROM (${PAGAMENTOS})`).c,
+    dcCirculacao: one(`SELECT COALESCE(SUM(balanceDC),0) c FROM accounts`).c,
+  };
+
+  const veredito = calcularVeredito(atual, anterior, retencao.atual, retencao.anterior, {
+    baseConfiavel, mauConfiavel, mau, mauAnterior, tendenciaDAU,
+  });
+
+  return {
+    days, hoje, ontem, rastreioDesde, baseConfiavel,
+    serie, atual, anterior, retencao, coortes: coortes.slice(0, 45),
+    audiencia, tendenciaDAU, heatmap, totais, veredito,
+  };
+}
+
+function snapshotAoVivo(ctx) {
+  const { db, relogio, store, config } = ctx;
+  const now = nowSeconds();
+  const hoje0 = relogio.inicioDia(now);
+  const ontem0 = hoje0 - 86400;
+  const preco = new Map(DC_PACKAGES.map((p) => [p.packageId, p.priceCents]));
+  const pop = populacaoAgora(store, config);
+
+  // "ativos" = jogadores cujo PRIMEIRO login do dia aconteceu antes de `b`
+  const janela = (a, b, diaStr) => {
+    const at = db.prepare(`SELECT COUNT(*) c, COALESCE(SUM(played),0) j, COALESCE(SUM(logins),0) l
+                           FROM player_daily_activity WHERE day = ? AND firstSeenAt < ?`).get(diaStr, b);
+    const mp = db.prepare(`SELECT COUNT(*) n, COALESCE(SUM(priceCents),0) c FROM dc_orders
+                           WHERE status='approved' AND creditedAt >= ? AND creditedAt < ?`).get(a, b);
+    let playN = 0, playC = 0;
+    for (const x of db.prepare(`SELECT productId, COUNT(*) n, COALESCE(SUM(quantity),0) qn FROM play_orders
+                                WHERE status='credited' AND creditedAt >= ? AND creditedAt < ? GROUP BY productId`).all(a, b)) {
+      playN += x.n;
+      playC += (preco.get(x.productId) || 0) * (x.qn || x.n);
+    }
+    const pag = db.prepare(`SELECT COUNT(DISTINCT playerId) c FROM (
+        SELECT playerId FROM dc_orders WHERE status='approved' AND creditedAt >= ? AND creditedAt < ?
+        UNION ALL
+        SELECT playerId FROM play_orders WHERE status='credited' AND creditedAt >= ? AND creditedAt < ?)`).get(a, b, a, b).c;
+    return {
+      ativos: at.c,
+      logins: at.l,
+      jogaram: at.j,
+      novos: db.prepare(`SELECT COUNT(*) c FROM accounts WHERE createdAt >= ? AND createdAt < ?`).get(a, b).c,
+      compras: mp.n + playN,
+      comprasMp: mp.n,
+      comprasPlay: playN,
+      receita: mp.c + playC,
+      receitaMp: mp.c,
+      receitaPlayEst: playC,
+      pagantes: pag,
+    };
+  };
+
+  // dos que logaram ontem, quantos já logaram hoje
+  const voltaramHoje = db.prepare(`
+    SELECT COUNT(*) base, SUM(b.playerId IS NOT NULL) voltou
+    FROM player_daily_activity a
+    LEFT JOIN player_daily_activity b ON b.playerId = a.playerId AND b.day = ?
+    WHERE a.day = ?`).get(relogio.dia(now), relogio.dia(ontem0));
+
+  const picoHoje = db.prepare(`SELECT COALESCE(MAX(ccu),0) p FROM population_samples WHERE ts >= ?`).get(hoje0).p;
+  const ultimaHora = db.prepare(`SELECT ts, ccu FROM population_samples WHERE ts >= ? ORDER BY ts`).all(now - 3600);
+  ultimaHora.push({ ts: now, ccu: pop.ccu });
+
+  const ultimasCompras = db.prepare(`
+    SELECT * FROM (
+      SELECT 'mp' prov, o.playerId, a.playerName, o.packageId pacote, o.priceCents cents,
+             (o.amountDC + o.bonusDC) dc, o.creditedAt ts
+      FROM dc_orders o LEFT JOIN accounts a ON a.playerId = o.playerId
+      WHERE o.status='approved' AND o.creditedAt IS NOT NULL
+      UNION ALL
+      SELECT 'play', p.playerId, a.playerName, p.productId, NULL, p.totalDC, p.creditedAt
+      FROM play_orders p LEFT JOIN accounts a ON a.playerId = p.playerId
+      WHERE p.status='credited' AND p.creditedAt IS NOT NULL
+    ) ORDER BY ts DESC LIMIT 8`).all()
+    .map((c) => (c.prov === "play" ? { ...c, cents: preco.get(c.pacote) ?? null } : c));
+
+  return {
+    ts: now,
+    ccu: pop.ccu,
+    servidores: pop.servers,
+    picoHoje: Math.max(picoHoje, pop.ccu),
+    hoje: janela(hoje0, now + 1, relogio.dia(now)),
+    ontemAteAgora: janela(ontem0, now - 86400 + 1, relogio.dia(ontem0)),
+    ontemTotal: janela(ontem0, hoje0, relogio.dia(ontem0)),
+    voltaramHoje: {
+      base: voltaramHoje.base || 0,
+      voltou: voltaramHoje.voltou || 0,
+      pct: voltaramHoje.base ? voltaramHoje.voltou / voltaramHoje.base : null,
+    },
+    ultimaHora,
+    ultimasCompras,
+  };
+}
+
+function registrarRotasRelatorios(app, r, adminAuth, wrap, ctx) {
+  const toInt = (v, def) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : def; };
+
+  const cacheG = new Map();
+  app.get(`${r}/reports/growth`, adminAuth, wrap((req, res) => {
+    const days = Math.max(7, Math.min(365, toInt(req.query.days, 30)));
+    const c = cacheG.get(days);
+    if (c && Date.now() - c.t < 30000) return res.json(c.v);
+    const v = { ok: true, ...montarRelatorioCrescimento(ctx, days) };
+    cacheG.set(days, { t: Date.now(), v });
+    res.json(v);
+  }));
+
+  let cacheLive = null;
+  const live = () => {
+    if (!cacheLive || Date.now() - cacheLive.t > 3000) cacheLive = { t: Date.now(), v: snapshotAoVivo(ctx) };
+    return cacheLive.v;
+  };
+
+  app.get(`${r}/reports/live`, adminAuth, wrap((req, res) => res.json({ ok: true, ...live() })));
+
+  app.get(`${r}/reports/stream`, adminAuth, (req, res) => {
+    res.set({
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    res.flushHeaders?.();
+    const send = () => {
+      try {
+        res.write(`data: ${JSON.stringify(live())}\n\n`);
+      } catch (e) {
+        ctx.logger.warn(`[Relatórios] stream: ${e.message}`);
+      }
+    };
+    send();
+    const t = setInterval(send, 5000);
+    req.on("close", () => clearInterval(t));
+  });
+}
+
+// ============================================================================
 // REGISTRO
 // ============================================================================
 
@@ -200,6 +757,11 @@ function registrarRotasAdmin(app, deps) {
   if (!ledgerCols.includes("currency")) {
     db.exec(`ALTER TABLE dc_ledger ADD COLUMN currency TEXT NOT NULL DEFAULT 'DC'`);
   }
+
+  const relogio = criarRelogioLocal(config);
+  const atividade = instalarRastreioDeAtividade(db, authStore, relogio, logger);
+  authStore.registrarLoginDiario = atividade.registrarLogin; // usado pelo /auth/validate-session
+  iniciarAmostragemPopulacao(db, store, config, logger);
 
   function audit(req, action, target, details) {
     try {
@@ -836,6 +1398,10 @@ function registrarRotasAdmin(app, deps) {
       : null;
     res.json({ ok: true, days, cadastros, niveis, top, metric, ativos7dPush: ativos });
   }));
+
+  registrarRotasRelatorios(app, r, adminAuth, wrap, {
+    db, relogio, store, config, skinCatalog, logger,
+  });
 
   // ══════════════════════════════════════════════════════════════════════════
   // SKINS

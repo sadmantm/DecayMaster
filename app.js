@@ -2221,6 +2221,9 @@ const shopStore = new ShopStore(authStore.db, config, logger);
 const googleShop = new GoogleShopStore(authStore.db, config, logger);
 const skinCatalog = new SkinCatalogStore(config, logger);
 
+const { PopupStore, registrarRotasPopups } = require("./popups");
+
+const popupStore = new PopupStore({ config, logger });
 
 function extractFingerprint(req) {
   return {
@@ -2285,6 +2288,14 @@ registrarRotasLoja(app, {
 
 registrarRotasGooglePlay(app, {
   config, logger, googleShop, jwtAuth, rateLimiter, onCredited,
+});
+
+registrarRotasPopups(app, {
+  config,
+  logger,
+  popupStore,
+  rateLimiter,
+   audit: (acao, alvo, det, req) => auditStore.registrar(acao, alvo, det, req.ip),
 });
 
 //#region Rotas servidores
@@ -2600,7 +2611,6 @@ app.get("/stats", (req, res) => {
 
 //#endregion
 
-
 //#region Rotas Contas
 
 app.post("/auth/email", rateLimiter.middleware(), async (req, res) => {
@@ -2874,6 +2884,10 @@ app.post("/auth/validate-session", (req, res) => {
   }
 
   const result = authStore.validateSession(token, deviceId);
+
+  // reabriu o jogo com sessão salva = login do dia (o chat NÃO passa por aqui)
+  if (result.valid) authStore.registrarLoginDiario?.(result.playerId);
+
   res.json({ ok: true, ...result });
 });
 
