@@ -10,6 +10,9 @@ node_modules/
 secrets/play-service-account.json
 secrets/firebase-admin.json
 
+data/fingerprints.json
+master.config.json
+
 # Bancos e arquivos locais
 data/*.db
 data/*.db-shm
