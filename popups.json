@@ -1,5 +1,5 @@
 {
-  "revision": 6,
+  "revision": 8,
   "popups": [
     {
       "popupId": "comunidade_zap",
@@ -15,6 +15,9 @@
       "endAt": null,
       "platforms": [],
       "builds": [],
+      "languages": [
+        "pt"
+      ],
       "createdAt": 1789924274,
       "updatedAt": 1789924274
     },
@@ -34,6 +37,26 @@
       "builds": [],
       "createdAt": 1789924449,
       "updatedAt": 1789924449
+    },
+    {
+      "popupId": "ak_gold",
+      "titulo": "ak ouro ingles",
+      "imageUrl": "http://localhost:3000/popup-images/ak_gold-ede1201543ecedd8.jpg",
+      "imageHash": "ede1201543ecedd8",
+      "linkUrl": "",
+      "buttonText": "",
+      "frequency": "always",
+      "order": 3,
+      "enabled": true,
+      "startAt": null,
+      "endAt": null,
+      "platforms": [],
+      "builds": [],
+      "languages": [
+        "en"
+      ],
+      "createdAt": 1791228875,
+      "updatedAt": 1791228875
     }
   ]
 }

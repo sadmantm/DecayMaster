@@ -1,1 +1,21 @@
-{}
+{
+  "5334574e-e8-46d2-818a-b7b0222": {
+    "serverId": "5334574e-e8-46d2-818a-b7b0222",
+    "name": "BRASIL DUO VANILLA 1x",
+    "ip": "192.168.1.8",
+    "port": 3000,
+    "serverType": "official",
+    "region": "BR",
+    "maxPlayers": 64,
+    "playersOnline": 1,
+    "status": "Online",
+    "mapId": "island_v1",
+    "buildVersion": "0.1.0",
+    "description": "Servidor Oficial Duo. Máximo de 2 jogadores por equipe. Alianças para contornar o limite de equipe não são permitidas. Wipe semanal todos os sábados. Respeite os demais jogadores e evite qualquer tipo de exploração de bugs ou trapaças.",
+    "discordUrl": null,
+    "latencyMs": 38,
+    "registeredAt": 1791229261,
+    "lastHeartbeatAt": 1791229381,
+    "wipeDate": "2026-10-13T15:00:00Z"
+  }
+}

@@ -169,7 +169,6 @@ table.coh td.c,table.coh th.c{text-align:center;font-variant-numeric:tabular-num
 #logbox div{white-space:pre-wrap;word-break:break-word;padding:1px 0;border-bottom:1px solid rgba(255,255,255,.02)}
 #logbox .t{color:var(--dim)}#logbox .lv{display:inline-block;width:52px}
 #logbox .debug .lv{color:var(--dim)}#logbox .info .lv{color:var(--info)}#logbox .warn .lv{color:var(--gold2)}
-#logbox .error .lv{color:var(--danger)}#logbox .chat .lv{color:var(--violet)}
 #logbox .error{background:rgba(217,107,107,.06)}
 </style>
 </head>
@@ -211,7 +210,15 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmtN = (n) => Number(n || 0).toLocaleString("pt-BR");
-const fmtBRL = (c) => "R$ " + (Number(c || 0) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+const fmtTempo = (s) => {
+  s = Math.round(s || 0);
+  if (s < 60) return `${s}s`;
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h ? `${fmtN(h)}h ${String(m).padStart(2, "0")}min` : `${m}min`;
+};
+const fmtMin = (v) => (v == null || !isFinite(v) ? "—" : fmtTempo(v * 60));
+const fmtHoras = (v) => (v == null || !isFinite(v) ? "—" : `${fmtDec(v, 1)} h`);
+const fmtBRL = (c) => "R$ " + (Number(c || 0) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDT = (s) => s ? new Date(s * 1000).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
 const fmtD = (s) => s ? new Date(s * 1000).toLocaleDateString("pt-BR") : "—";
 const ago = (s) => { if (!s) return "—"; const d = Math.floor(Date.now() / 1000) - s; if (d < 60) return `${d}s`; if (d < 3600) return `${Math.floor(d / 60)}min`; if (d < 86400) return `${Math.floor(d / 3600)}h`; return `${Math.floor(d / 86400)}d`; };
@@ -314,10 +321,10 @@ if (S.key) api("/ping", { silent: true }).then(entrar).catch(() => doLogout());
 
 /* ═══════════════════════════════ nav / router ═══════════════════════════════ */
 const NAV = [
-  ["Operação", [["overview", "Visão geral"], ["players", "Jogadores"], ["coins", "Moedas"], ["bans", "Banimentos"], ["servers", "Servidores"], ["chat", "Chat e push"]]],
-  ["Loja", [["orders","Pedidos"], ["reports","Relatórios"], ["skins","Skins"],
-               ["packages","Pacotes DC"], ["popups","Pop-ups"]]],
-  ["Sistema", [["config", "Configuração"], ["logs", "Logs"], ["audit", "Auditoria"]]],
+["Operação", [["overview", "Visão geral"], ["players", "Jogadores"], ["coins", "Moedas"], ["bans", "Banimentos"], ["servers", "Servidores"], ["push", "Push"]]],
+["Loja", [["orders","Pedidos"], ["reports","Relatórios"], ["skins","Skins"], ["roulette","Roleta"],
+             ["packages","Pacotes DC"], ["popups","Pop-ups"]]],
+["Sistema", [["config", "Configuração"], ["logs", "Logs"], ["audit", "Auditoria"]]],
 ];
 function renderNav() {
   $("#nav").innerHTML = NAV.map(([g, items]) => `<div class="grp">${g}</div>` + items.map(([id, l]) => `<a href="#/${id}" data-nav="${id}">${l}</a>`).join("")).join("");
@@ -412,7 +419,7 @@ VIEWS.overview = async function () {
   <div class="top"><div><h1>Visão geral</h1><p>Processo ativo há ${dur(o.uptime)} · ${o.memoriaMB} MB · FCM ${o.fcmEnabled ? "ativo" : "desligado"}</p></div>
     <div class="row"><a class="btn" href="#/logs">Ver logs</a><button class="btn" data-act="reload">Atualizar</button></div></div>
   <div class="grid g4">
-    ${stat("Jogadores em servidores", fmtN(o.servidores.players), `${o.servidores.online}/${o.servidores.total} servidores online · ${o.chat.online} no chat`, "ok")}
+    ${stat("Jogadores em servidores", fmtN(o.servidores.players), `${o.servidores.online}/${o.servidores.total} servidores online`, "ok")}
     ${stat("Receita 24h (Mercado Pago)", fmtBRL(mp.h24.c), `${mp.h24.n} pedidos · 7d ${fmtBRL(mp.d7.c)} · total ${fmtBRL(mp.total.c)}`, "gold")}
     ${stat("Compras Play 24h", fmtN(pl.h24.n), `${fmtN(pl.h24.dc)} DC · 7d ${pl.d7.n} compras`, "info")}
     ${stat("Contas", fmtN(o.contas.total), `${o.contas.emails} e-mail · ${o.contas.guests} guest · +${o.contas.novas24h} hoje`)}
@@ -454,10 +461,10 @@ VIEWS.players = async function (sub, arg) {
   async function load() {
     const r = await api(`/players?q=${encodeURIComponent(st.q)}&type=${st.type}&sort=${st.sort}&dir=${st.dir}&limit=${st.limit}&offset=${st.offset}`);
     $("#plist").innerHTML = table([
-      { h: "", f: (p) => `<span class="dot ${p.online ? "on" : ""}" title="${p.online ? "no chat" : "offline"}"></span>` },
       { h: "Jogador", f: (p) => `<b>${esc(p.playerName || "(sem nome)")}</b> ${p.banned ? '<span class="tag danger">banido</span>' : ""}<br><span class="hint mono">${p.playerId}</span>` },
       { h: "Tipo", f: (p) => `<span class="tag">${p.accountType}</span> ${p.email ? `<span class="hint">${esc(p.email)}</span>` : ""}` },
       { h: "Nível", f: (p) => `${p.level} <span class="hint">${p.xp} xp</span>`, num: true },
+      { h: "Tempo jogado", f: (p) => p.playtimeSeconds ? `<b>${fmtTempo(p.playtimeSeconds)}</b><br><span class="hint">última ${ago(p.lastPlayedAt)} atrás</span>` : '<span class="hint">nunca</span>', num: true },
       { h: "K/D/HS", f: (p) => `${p.kills}/${p.deaths}/${p.headshots}`, num: true },
       { h: "DC", f: (p) => fmtN(p.balanceDC), num: true },
       { h: "DS", f: (p) => fmtN(p.balanceDS), num: true },
@@ -471,7 +478,7 @@ VIEWS.players = async function (sub, arg) {
   <div class="row" style="margin-bottom:12px">
     <input type="text" id="pq" class="sm" style="width:300px" placeholder="id, nick, e-mail ou deviceId" value="${esc(st.q)}">
     <select id="ptype" class="sm"><option value="">Todos os tipos</option><option value="email">E-mail</option><option value="guest">Guest</option></select>
-    <select id="psort" class="sm"><option value="createdAt">Mais recentes</option><option value="level">Maior nível</option><option value="kills">Mais kills</option><option value="balanceDC">Mais DC</option><option value="balanceDS">Mais DS</option><option value="playerName">Nome</option></select>
+    <select id="psort" class="sm"><option value="createdAt">Mais recentes</option><option value="playtimeSeconds">Mais tempo jogado</option><option value="lastPlayedAt">Jogou por último</option><option value="level">Maior nível</option><option value="kills">Mais kills</option><option value="balanceDC">Mais DC</option><option value="balanceDS">Mais DS</option><option value="playerName">Nome</option></select>
   </div><div id="plist"></div>`);
   $("#pq").oninput = () => { clearTimeout(st.t); st.t = setTimeout(() => { st.q = $("#pq").value.trim(); st.offset = 0; load(); }, 250); };
   $("#ptype").onchange = (e) => { st.type = e.target.value; st.offset = 0; load(); };
@@ -481,7 +488,6 @@ VIEWS.players = async function (sub, arg) {
   ACTIONS.new = criarConta;
   await load();
 };
-
 function criarConta() {
   const box = modal(`<h2>Criar conta</h2>
     <div class="grid g2">
@@ -507,16 +513,16 @@ function criarConta() {
 async function playerDetail(id, tab = "resumo") {
   const d = await api(`/players/${id}`);
   const a = d.account;
-  const TABS = [["resumo", "Resumo"], ["saldo", "Moedas"], ["skins", `Skins (${d.skins.length})`], ["pedidos", `Pedidos (${d.ordersMp.length + d.ordersPlay.length})`], ["ledger", `Ledger (${d.ledger.length})`], ["devices", `Dispositivos (${d.fingerprints.length})`], ["acesso", "Acesso"]];
+  const TABS = [["resumo", "Resumo"], ["tempo", `Tempo (${fmtTempo(d.playtime?.totalSeconds || 0)})`], ["saldo", "Moedas"], ["skins", `Skins (${d.skins.length})`], ["roleta", `Roleta (${fmtN(d.roleta?.totalGiros || 0)})`], ["pedidos", `Pedidos (${d.ordersMp.length + d.ordersPlay.length})`], ["ledger", `Ledger (${d.ledger.length})`], ["devices", `Dispositivos (${d.fingerprints.length})`], ["acesso", "Acesso"]];
   let body = "";
   if (tab === "resumo") body = `<div class="grid g2">
     <div class="panel"><h2>Conta</h2><dl class="kv">
       <dt>playerId</dt><dd class="mono">${a.playerId}</dd><dt>Nick</dt><dd>${esc(a.playerName || "—")}</dd>
       <dt>Tipo</dt><dd>${a.accountType}${a.email ? ` · ${esc(a.email)}` : ""}</dd>
       ${a.guestDeviceId ? `<dt>Guest device</dt><dd class="mono">${esc(a.guestDeviceId)}</dd>` : ""}
-      <dt>Criada</dt><dd>${fmtDT(a.createdAt)}</dd><dt>Chat</dt><dd>${a.online ? '<span class="tag ok">online</span>' : "offline"}</dd>
+      <dt>Criada</dt><dd>${fmtDT(a.createdAt)}</dd>
       <dt>Push</dt><dd>${d.pushTokens.length} token(s) ${d.pushTokens.map((t) => `<span class="tag">${esc(t.platform || "?")} ${esc(t.model || "")}</span>`).join(" ")}</dd></dl>
-      <div class="row" style="margin-top:14px"><button class="btn" data-act="edit">Editar dados</button><button class="btn" data-act="kick">Desconectar do chat</button></div></div>
+      <div class="row" style="margin-top:14px"><button class="btn" data-act="edit">Editar dados</button></div></div>
     <div class="panel"><h2>Progresso</h2><dl class="kv">
       <dt>Nível</dt><dd>${a.level} <span class="hint">(${a.xp}/${a.xpToNextLevel} xp)</span></dd>
       <dt>Kills / Deaths</dt><dd>${a.kills} / ${a.deaths} <span class="hint">KD ${(a.kills / Math.max(1, a.deaths)).toFixed(2)}</span></dd>
@@ -526,6 +532,29 @@ async function playerDetail(id, tab = "resumo") {
     ${d.bans.length ? `<div class="panel" style="grid-column:1/-1"><h2>Histórico de bans</h2>${table([
       { h: "Status", f: (b) => `<span class="tag ${b.active ? "danger" : ""}">${b.active ? "ativo" : "removido"}</span>` }, { h: "Motivo", f: (b) => esc(b.reason) }, { h: "Por", f: (b) => esc(b.admin) },
       { h: "Devices/HW/IPs", f: (b) => `${b.deviceIds.length}/${b.hardwareIds.length}/${b.ips.length}` }, { h: "Quando", f: (b) => fmtDT(b.createdAt) }], d.bans)}</div>` : ""}</div>`;
+  if (tab === "tempo") body = renderTempoJogador(d.playtime);
+  if (tab === "roleta") {
+    const R = d.roleta || { ativa: null, progresso: [], giros: [], totalGiros: 0 };
+    body = `<div class="grid g2">
+    <div class="panel"><h2>Conceder giros grátis</h2>
+      <div class="grid g2">
+        <div class="f"><label>Roleta (rouletteId)</label><input type="text" id="rlRid" value="${esc(R.ativa || "")}" placeholder="temporada_01"></div>
+        <div class="f"><label>Quantidade</label><input type="number" id="rlQtd" value="1" min="1"></div></div>
+      <div class="row" style="margin-top:12px"><button class="btn p" data-act="rlgrant">Conceder</button></div></div>
+    <div class="panel"><h2>Resumo</h2><dl class="kv">
+      <dt>Giros no total</dt><dd>${fmtN(R.totalGiros)}</dd>
+      <dt>Roleta ativa</dt><dd class="mono">${esc(R.ativa || "nenhuma")}</dd>
+      <dt>Lendários</dt><dd>${fmtN(R.giros.filter((g) => g.rarity === "legendary").length)} <span class="hint">nos últimos ${R.giros.length} giros</span></dd></dl></div></div>
+    <div class="panel" style="margin-top:14px"><h2>Progresso por roleta</h2>
+      ${R.progresso.length ? `<div class="tw"><table><thead><tr><th>Roleta</th><th class="num">Giros</th><th class="num">Grátis disponíveis</th><th class="num">Progresso p/ grátis</th><th class="num">Giros sem lendário</th><th>Atualizado</th><th></th></tr></thead><tbody>
+      ${R.progresso.map((p) => `<tr><td class="mono">${esc(p.rouletteId)}${p.rouletteId === R.ativa ? ' <span class="tag gold">ativa</span>' : ""}</td>
+        <td class="num">${fmtN(p.totalSpins)}</td>
+        ${["freeSpinsAvailable", "freeSpinProgress", "spinsSinceLegendary"].map((k) => `<td class="num"><input type="number" class="sm" min="0" style="width:80px" data-rl="${esc(p.rouletteId)}" data-k="${k}" value="${p[k]}"></td>`).join("")}
+        <td>${fmtDT(p.updatedAt)}</td>
+        <td><button class="btn sm" data-act="rlsave" data-rid="${esc(p.rouletteId)}">Salvar</button> <button class="btn sm d" data-act="rlreset" data-rid="${esc(p.rouletteId)}">Zerar</button></td></tr>`).join("")}
+      </tbody></table></div>` : `<div class="empty">Este jogador nunca girou a roleta.</div>`}</div>
+    <div class="panel" style="margin-top:14px"><h2>Últimos giros</h2>${girosTable(R.giros, { jogador: false })}</div>`;
+  }
   if (tab === "saldo") body = `<div class="grid g2">
     <div class="panel"><h2>Ajustar saldo</h2><p class="hint" style="margin:0 0 12px">Positivo credita, negativo debita. Fica registrado no ledger com origem <code>admin</code>.</p>
       <div class="grid g2"><div class="f"><label>Moeda</label><select id="ajCur"><option>DC</option><option>DS</option></select></div><div class="f"><label>Quantidade (±)</label><input type="number" id="ajDelta" placeholder="ex.: 500 ou -200"></div></div>
@@ -566,13 +595,37 @@ async function playerDetail(id, tab = "resumo") {
 
   setMain(`
   <div class="top"><div><a href="#/players" class="hint">← Jogadores</a><h1>${esc(a.playerName || "(sem nome)")} <span class="hint mono" style="font-size:16px;font-weight:400">${a.playerId}</span></h1>
-    <p>${a.accountType} · nível ${a.level} · ${fmtN(a.balanceDC)} DC · ${fmtN(a.balanceDS)} DS ${a.banned ? '· <span class="tag danger">BANIDO</span>' : ""} ${a.online ? '· <span class="tag ok">no chat</span>' : ""}</p></div>
+    <p>${a.accountType} · nível ${a.level} · ${fmtN(a.balanceDC)} DC · ${fmtN(a.balanceDS)} DS ${a.banned ? '· <span class="tag danger">BANIDO</span>' : ""}</p></div>
     <div class="row">${a.banned ? `<button class="btn" data-act="unban">Desbanir</button>` : `<button class="btn d" data-act="ban">Banir</button>`}<button class="btn p" data-act="tab" data-tab="saldo">Ajustar moedas</button></div></div>
   <div class="tabs">${TABS.map(([k, l]) => `<button class="${k === tab ? "on" : ""}" data-act="tab" data-tab="${k}">${l}</button>`).join("")}</div>${body}`);
 
   const reload = (t = tab) => { history.replaceState(null, "", `#/players/${id}/${t}`); return playerDetail(id, t); };
+  function renderTempoJogador(pt) {
+  if (!pt || !pt.totalSeconds) return `<div class="empty">Este jogador ainda não tem tempo de partida registrado.</div>`;
+  const media = pt.sessions ? pt.totalSeconds / pt.sessions : null;
+  const seg30 = pt.tempoDiario.reduce((a, x) => a + x.seg, 0);
+  return `
+  <div class="grid g4">
+    ${stat("Tempo total jogado", fmtTempo(pt.totalSeconds), `${fmtN(pt.sessions)} sessões · ${fmtN(pt.diasJogadosTotal)} dia(s) com partida`, "gold")}
+    ${stat("Últimos 30 dias", fmtTempo(seg30), `jogou em ${pt.diasJogados30} de 30 dias`, "info")}
+    ${stat("Duração média da sessão", media ? fmtTempo(media) : "—", `${pt.servers.length} servidor(es) diferentes`)}
+    ${stat("Última partida", pt.lastPlayedAt ? `${ago(pt.lastPlayedAt)} atrás` : "—", `primeira em ${fmtD(pt.firstPlayedAt)}`, "ok")}
+  </div>
+  <div class="panel" style="margin-top:14px"><h2 style="margin-bottom:10px">Minutos jogados por dia (30 dias)</h2>
+    ${lineChart(pt.tempoDiario.map((x) => x.day), [{ name: "Minutos", values: pt.tempoDiario.map((x) => Math.round(x.seg / 60)), color: "var(--gold)", w: 2.5 }], { fmt: (v) => `${fmtN(Math.round(v))}min` })}</div>
+  <div class="panel" style="margin-top:14px"><h2 style="margin-bottom:10px">Por servidor</h2>
+    ${table([
+      { h: "", f: (s) => `<span class="dot ${s.online ? "on" : ""}"></span>` },
+      { h: "Servidor", f: (s) => `<b>${esc(s.serverName)}</b><br><span class="hint mono">${esc(s.serverId)}</span>` },
+      { h: "Tempo", f: (s) => `<b>${fmtTempo(s.totalSeconds)}</b>`, num: true },
+      { h: "% do total", f: (s) => pct(s.totalSeconds / pt.totalSeconds, 0), num: true },
+      { h: "Sessões", f: (s) => fmtN(s.sessions), num: true },
+      { h: "Média/sessão", f: (s) => s.sessions ? fmtTempo(s.totalSeconds / s.sessions) : "—", num: true },
+      { h: "Primeira", f: (s) => fmtDT(s.firstPlayedAt) },
+      { h: "Última", f: (s) => `${ago(s.lastPlayedAt)} atrás` },
+    ], pt.servers)}</div>`;
+}
   ACTIONS.tab = (d) => reload(d.tab);
-  ACTIONS.kick = async () => { await api(`/players/${id}/kick`, { method: "POST", body: {} }); toast("Desconectado do chat."); };
   ACTIONS.revoke = async () => { if (await confirmar("Encerrar sessões", "O jogador precisará fazer login de novo em todos os aparelhos.")) { const r = await api(`/players/${id}/sessions/revoke`, { method: "POST", body: {} }); toast(`${r.removidas} sessão(ões) encerrada(s).`); reload(); } };
   ACTIONS.ban = async () => { const m = await confirmar("Banir jogador", `Bloqueia a conta e todos os ${d.fingerprints.length} dispositivo(s)/IP(s) conhecidos.`, { danger: true, okLabel: "Banir", campo: { label: "Motivo", placeholder: "ex.: cheat, chargeback" } }); if (m !== null) { await api("/bans", { method: "POST", body: { playerId: id, reason: m } }); toast("Jogador banido."); reload(); } };
   ACTIONS.unban = async () => { await api(`/bans/${id}`, { method: "DELETE" }); toast("Banimento removido."); reload(); };
@@ -596,6 +649,24 @@ async function playerDetail(id, tab = "resumo") {
       if ($("#ePass", box)?.value) body.password = $("#ePass", box).value;
       await api(`/players/${id}`, { method: "PATCH", body }); closeModal(); toast("Alterações salvas."); reload();
     };
+  };
+  ACTIONS.rlsave = async (dd) => {
+    const body = {};
+    $$("[data-rl]").filter((el) => el.dataset.rl === dd.rid).forEach((el) => { body[el.dataset.k] = parseInt(el.value, 10) || 0; });
+    await api(`/players/${id}/roulette/${encodeURIComponent(dd.rid)}`, { method: "PATCH", body });
+    toast("Progresso da roleta salvo."); reload();
+  };
+  ACTIONS.rlreset = async (dd) => {
+    if (!(await confirmar("Zerar progresso", `Zera giros grátis, progresso e contador de pity de <b>${esc(dd.rid)}</b>. O histórico de giros fica.`, { danger: true, okLabel: "Zerar" }))) return;
+    await api(`/players/${id}/roulette/${encodeURIComponent(dd.rid)}`, { method: "DELETE" });
+    toast("Progresso zerado."); reload();
+  };
+  ACTIONS.rlgrant = async () => {
+    const rid = $("#rlRid").value.trim();
+    const n = parseInt($("#rlQtd").value, 10);
+    if (!rid || !(n > 0)) return toast("Informe a roleta e a quantidade.", "warn");
+    await api(`/players/${id}/roulette/${encodeURIComponent(rid)}`, { method: "PATCH", body: { addFreeSpins: n } });
+    toast(`${n} giro(s) grátis concedido(s).`); reload();
   };
 }
 
@@ -708,34 +779,29 @@ VIEWS.servers = async function () {
 };
 
 /* ═══════════════════════════════ CHAT E PUSH ═══════════════════════════════ */
-VIEWS.chat = async function () {
-  const [on, ps] = await Promise.all([api("/chat/online"), api("/push/stats")]);
-  setMain(`<div class="top"><div><h1>Chat e notificações</h1><p>${on.rows.length} jogador(es) no chat global · ${ps.tokens} tokens push em ${ps.players} jogadores · FCM ${ps.fcmEnabled ? (ps.dryRun ? "em dry-run" : "ativo") : "desligado (log-only)"}</p></div></div>
-  <div class="grid g3">
-    <div class="panel"><h2>Mensagem no chat</h2><p class="hint" style="margin:0 0 10px">Entregue agora a todos os conectados ao chat global.</p>
-      <div class="f"><label>Assinatura</label><input type="text" id="cAs" value="[ADMIN]"></div><div class="f" style="margin-top:8px"><label>Texto (até 200)</label><textarea id="cText" maxlength="200"></textarea></div>
-      <div class="row" style="margin-top:12px"><button class="btn p" data-act="bcast">Enviar no chat</button></div></div>
-    <div class="panel"><h2>Notificação push</h2><p class="hint" style="margin:0 0 10px">Via FCM. Chega mesmo com o jogo fechado.</p>
+VIEWS.push = async function () {
+  const ps = await api("/push/stats");
+  setMain(`<div class="top"><div><h1>Notificações push</h1><p>${ps.tokens} tokens em ${ps.players} jogadores · FCM ${ps.fcmEnabled ? (ps.dryRun ? "em dry-run" : "ativo") : "desligado (log-only)"}</p></div></div>
+  <div class="grid g2">
+    <div class="panel"><h2>Enviar push</h2><p class="hint" style="margin:0 0 10px">Via FCM. Chega mesmo com o jogo fechado.</p>
       <div class="f"><label>Destino</label><select id="pTo"><option value="all">Todos os dispositivos (${ps.tokens})</option><option value="one">Um jogador</option></select></div>
       <div class="f" style="margin-top:8px;display:none" id="pIdWrap"><label>playerId</label><input type="text" id="pId"></div>
-      <div class="f" style="margin-top:8px"><label>Título</label><input type="text" id="pTitle" maxlength="60"></div><div class="f" style="margin-top:8px"><label>Corpo</label><textarea id="pBody" maxlength="180"></textarea></div>
+      <div class="f" style="margin-top:8px"><label>Título</label><input type="text" id="pTitle" maxlength="60"></div>
+      <div class="f" style="margin-top:8px"><label>Corpo</label><textarea id="pBody" maxlength="180"></textarea></div>
       <div class="row" style="margin-top:12px"><label class="check"><input type="checkbox" id="pHigh"> Prioridade alta</label><button class="btn p" data-act="push" style="margin-left:auto">Enviar push</button></div></div>
     <div class="panel"><h2>Saúde do push</h2><dl class="kv">
-      <dt>Ativos 24h</dt><dd>${fmtN(ps.ativos24h)}</dd><dt>Inativos +7d</dt><dd>${fmtN(ps.inativos7d)}</dd><dt>Elegíveis a reengajamento</dt><dd>${fmtN(ps.candidatosReengajamento)} <span class="hint">(ignorando janela de horário)</span></dd>
+      <dt>Ativos 24h</dt><dd>${fmtN(ps.ativos24h)}</dd><dt>Inativos +7d</dt><dd>${fmtN(ps.inativos7d)}</dd>
+      <dt>Elegíveis a reengajamento</dt><dd>${fmtN(ps.candidatosReengajamento)} <span class="hint">(ignorando janela de horário)</span></dd>
       <dt>Por plataforma</dt><dd>${Object.entries(ps.porPlataforma).map(([k, v]) => `<span class="tag">${esc(k)} ${v}</span>`).join(" ") || "—"}</dd></dl>
-      <p class="hint" style="margin-top:12px">Cooldowns e janelas de horário do reengajamento ficam em <a href="#/config">Configuração → push</a>.</p></div>
-  </div>
-  <div class="panel" style="margin-top:14px"><div class="ph"><h2>No chat agora</h2><button class="btn sm" data-act="reload">Atualizar</button></div>
-    ${table([{ h: "Jogador", f: (c) => playerLink(c.playerId, c.playerName) }, { h: "Conexão", f: (c) => c.open ? '<span class="tag ok">aberta</span>' : '<span class="tag">fechando</span>' }, { h: "", f: (c) => `<button class="btn sm" data-act="kick" data-id="${c.playerId}">Desconectar</button>` }], on.rows, { empty: "Ninguém conectado ao chat." })}</div>`);
+      <p class="hint" style="margin-top:12px">Cooldowns e janelas de horário ficam em <a href="#/config">Configuração → push</a>.</p></div>
+  </div>`);
   $("#pTo").onchange = (e) => $("#pIdWrap").style.display = e.target.value === "one" ? "" : "none";
-  ACTIONS.reload = route;
-  ACTIONS.kick = async (d) => { await api(`/players/${d.id}/kick`, { method: "POST", body: {} }); toast("Desconectado."); route(); };
-  ACTIONS.bcast = async () => { const text = $("#cText").value.trim(); if (!text) return; const r = await api("/chat/broadcast", { method: "POST", body: { text, as: $("#cAs").value } }); toast(`Entregue a ${r.entregues} jogador(es).`); $("#cText").value = ""; };
   ACTIONS.push = async () => {
     const body = { title: $("#pTitle").value.trim(), body: $("#pBody").value.trim(), priority: $("#pHigh").checked ? "high" : "normal" };
     if (!body.title || !body.body) return toast("Preencha título e corpo.", "warn");
     if ($("#pTo").value === "all") { if (!(await confirmar("Enviar para todos", `Isso dispara <b>${ps.tokens}</b> notificações agora.`, { okLabel: "Enviar" }))) return; body.all = true; } else body.playerId = +$("#pId").value;
-    const r = await api("/push/send", { method: "POST", body }); toast(r.fcmEnabled ? `${r.enviados}/${r.tokens} enviados (${r.invalidos} tokens inválidos removidos).` : "FCM desligado: nada foi enviado (modo log-only).", r.fcmEnabled ? "ok" : "warn");
+    const r = await api("/push/send", { method: "POST", body });
+    toast(r.fcmEnabled ? `${r.enviados}/${r.tokens} enviados (${r.invalidos} tokens inválidos removidos).` : "FCM desligado: nada foi enviado (modo log-only).", r.fcmEnabled ? "ok" : "warn");
   };
 };
 
@@ -901,6 +967,7 @@ function renderLive(L) {
   const el = $("#live");
   if (!el) return;
   const h = L.hoje, o = L.ontemAteAgora, ot = L.ontemTotal, v = L.voltaramHoje;
+  const tp = L.tempo || { hoje: {}, ontem: {} };
   el.innerHTML = `<div class="section-title">Agora <span class="hint" style="text-transform:none;letter-spacing:0;font-weight:400">· ${new Date(L.ts * 1000).toLocaleTimeString("pt-BR")} · comparações com ontem até este mesmo horário</span></div>
   <div class="grid g4">
     <div class="panel stat ok"><div class="l">Jogadores em partida agora</div><div class="v">${fmtN(L.ccu)}</div>
@@ -908,6 +975,10 @@ function renderLive(L) {
     ${stat("Fizeram login hoje", fmtN(h.ativos), `${fmtN(h.logins)} logins · ${fmtN(h.jogaram)} entraram em partida · ontem ${fmtN(o.ativos)} ${deltaTag(h.ativos, o.ativos)}`, "info")}
     ${stat("Logaram ontem e voltaram hoje", pct(v.pct), `${fmtN(v.voltou)} de ${fmtN(v.base)} · dia ainda em andamento`, "ok")}
     ${stat("Receita hoje", fmtBRL(h.receita), `${fmtN(h.compras)} compras · ${fmtN(h.pagantes)} pagantes · ontem ${fmtBRL(o.receita)} ${deltaTag(h.receita, o.receita)}`, "gold")}
+  </div>
+  <div class="grid g2" style="margin-top:14px">
+    ${stat("Tempo jogado hoje", fmtTempo(tp.hoje.segundos), `${fmtN(tp.hoje.jogadores || 0)} jogadores · ${fmtN(tp.hoje.sessoes || 0)} sessões · ontem inteiro ${fmtTempo(tp.ontem.segundos)}`, "gold")}
+    ${stat("Tempo médio por jogador hoje", tp.hoje.mediaSeg ? fmtTempo(tp.hoje.mediaSeg) : "—", `ontem inteiro ${tp.ontem.mediaSeg ? fmtTempo(tp.ontem.mediaSeg) : "—"} · atualiza a cada ~1 min`, "info")}
   </div>
   <div class="panel" style="margin-top:14px"><div class="ph"><h2>Últimas compras</h2>
     <span class="hint">hoje: ${fmtN(h.novos)} contas novas (ontem até agora ${fmtN(o.novos)}) · ontem inteiro: ${fmtN(ot.ativos)} logaram · ${fmtN(ot.novos)} contas · ${fmtBRL(ot.receita)}</span></div>
@@ -919,7 +990,6 @@ function renderLive(L) {
       { h: "Valor", f: (c) => (c.cents == null ? "—" : `${c.prov === "play" ? "~" : ""}${fmtBRL(c.cents)}`), num: true },
     ], L.ultimasCompras, { empty: "Nenhuma compra ainda." })}</div>`;
 }
-
 function renderReports(G, s, p, top) {
   const A = G.atual, P = G.anterior, RA = G.retencao.atual, RP = G.retencao.anterior;
   const T = G.totais, AU = G.audiencia, V = G.veredito;
@@ -1043,17 +1113,78 @@ function renderReports(G, s, p, top) {
   </div>`;
 }
 
+function renderTempo(T) {
+  const A = T.atual, P = T.anterior, semBase = !T.baseConfiavel;
+  const painel = (t, html, extra = "") => `<div class="panel" ${extra}><h2 style="margin-bottom:10px">${t}</h2>${html}</div>`;
+  const lab = T.serie.map((x) => x.day);
+  const col = (k) => T.serie.map((x) => x[k]);
+  const pctCel = (v, base) => v == null
+    ? `<td class="c hint">·</td>`
+    : `<td class="c" style="background:rgba(103,183,132,${(0.06 + v * 0.85).toFixed(2)})" title="${base} contas">${pct(v, 0)}</td>`;
+
+  return `
+  <div class="section-title">Tempo de jogo — estão gostando?</div>
+  ${!T.atualCompleto ? `<div class="warnbox" style="margin-bottom:14px">A medição de tempo começou em <b>${fmtDia(T.desde)}</b>. Dias anteriores aparecem vazios, e as comparações com o período anterior ficam confiáveis quando ele for todo posterior a essa data.</div>` : ""}
+  <div class="grid g4">
+    ${kpi("Horas jogadas por dia", A.horasDia, P.horasDia, fmtHoras, { cls: "gold", semBase, sub: `${fmtHoras(A.horasTotal)} no período` })}
+    ${kpi("Tempo médio por jogador/dia", A.minPorJogadorDia, P.minPorJogadorDia, fmtMin, { cls: "info", semBase, sub: "de quem entrou em partida" })}
+    ${kpi("Duração média da sessão", A.sessaoMin, P.sessaoMin, fmtMin, { semBase, sub: `${fmtDec(A.sessoesPorJogadorDia)} sessões por jogador/dia` })}
+    ${kpi("Dias jogados por jogador", A.diasJogadosMedio, P.diasJogadosMedio, (v) => fmtDec(v), { cls: "ok", semBase, sub: `de ${T.days} dias · quanto maior, mais voltam` })}
+    ${kpi("Logaram e entraram em partida", A.pctJogaram, P.pctJogaram, (v) => pct(v), { pp: true, semBase, sub: "baixo = travam no menu/fila" })}
+    ${kpi("Jogadores que jogaram", A.jogadoresUnicos, P.jogadoresUnicos, fmtN, { semBase })}
+    ${kpi("Tempo por jogador no período", A.minPorJogadorPeriodo, P.minPorJogadorPeriodo, fmtMin, { semBase })}
+    ${stat("Servidores com jogadores", fmtN(T.porServidor.length), T.porServidor[0] ? `mais jogado: ${esc(T.porServidor[0].nome)}` : "")}
+  </div>
+
+  <div class="grid g2" style="margin-top:14px">
+    ${painel("Horas jogadas por dia", lineChart(lab, [
+      { name: "Horas", values: col("horas"), color: "var(--gold)", w: 2.5 },
+    ], { fmt: (v) => `${fmtDec(v, 0)}h` }))}
+    ${painel("Tempo médio por jogador e por sessão", lineChart(lab, [
+      { name: "Por jogador/dia", values: col("mediaMin"), color: "var(--info)", w: 2.5 },
+      { name: "Por sessão", values: col("sessaoMin"), color: "var(--violet)" },
+    ], { fmt: (v) => `${fmtN(Math.round(v))}min` }))}
+    ${painel("Quanto tempo jogam num dia", hbars(T.distribuicao, "faixa", "n") + `<p class="hint" style="margin-top:8px">Cada barra = jogador-dia. Muita gente em "&lt; 5 min" indica que abrem, testam e desistem.</p>`)}
+    ${painel("Em quantos dias diferentes jogaram", hbars(T.frequencia, "faixa", "n") + `<p class="hint" style="margin-top:8px">Jogadores que voltaram em vários dias do período — o melhor sinal de hábito.</p>`)}
+  </div>
+
+  <div class="panel" style="margin-top:14px"><h2 style="margin-bottom:6px">Quem joga mais no 1º dia volta mais?</h2>
+    <p class="hint" style="margin:0 0 12px">Contas novas agrupadas pelo tempo jogado no dia do cadastro, e quantas abriram o jogo 1 e 7 dias depois. Se a retenção sobe forte a partir de uma faixa, esse é o tempo que o jogador precisa para "pegar" o jogo — foque o tutorial/primeira partida em levá-lo até lá.</p>
+    ${T.retencaoPorTempo.some((g) => g.contas) ? `<div class="tw"><table class="coh"><thead><tr><th>Tempo no 1º dia</th><th class="num">Contas</th><th class="c">D1</th><th class="c">D7</th></tr></thead>
+      <tbody>${T.retencaoPorTempo.map((g) => `<tr><td>${esc(g.faixa)}</td><td class="num">${fmtN(g.contas)}</td>${pctCel(g.d1, g.contas)}${pctCel(g.d7, g.base7)}</tr>`).join("")}</tbody></table></div>`
+      : `<div class="empty">Ainda sem contas novas com o 1º dia medido.</div>`}</div>
+
+  <div class="grid g2" style="margin-top:14px">
+    ${painel("Tempo por servidor", table([
+      { h: "", f: (s) => `<span class="dot ${s.online ? "on" : ""}"></span>` },
+      { h: "Servidor", f: (s) => esc(s.nome) },
+      { h: "Jogadores", f: (s) => fmtN(s.jogadores), num: true },
+      { h: "Horas", f: (s) => `${fmtHoras(s.seg / 3600)} ${semBase ? "" : deltaTag(s.seg, s.segAnterior)}`, num: true },
+      { h: "Por jogador", f: (s) => fmtMin(s.minPorJogador), num: true },
+      { h: "Sessão média", f: (s) => fmtMin(s.sessaoMin), num: true },
+    ], T.porServidor, { empty: "Nenhum tempo registrado no período." }))}
+    ${painel("Quem mais jogou no período", table([
+      { h: "Jogador", f: (x) => playerLink(x.playerId, x.playerName) },
+      { h: "Tempo", f: (x) => `<b>${fmtTempo(x.seg)}</b>`, num: true },
+      { h: "Dias", f: (x) => x.dias, num: true },
+      { h: "Sessões", f: (x) => x.sessoes, num: true },
+      { h: "Nível", f: (x) => x.level ?? "—", num: true },
+    ], T.top, { empty: "Ninguém jogou ainda." }))}
+  </div>`;
+}
+
 VIEWS.reports = async function () {
   let days = Number(sessionStorage.getItem("decay.repDays")) || 30;
   let top = "kills";
-  let G = null;
+  let G = null, T = null;
 
-  setMain(`<div class="top"><div><h1>Relatórios</h1><p>Crescimento, retenção, monetização e população, com a seção "Agora" ao vivo.</p></div>
+  setMain(`<div class="top"><div><h1>Relatórios</h1><p>Crescimento, retenção, engajamento, monetização e população, com a seção "Agora" ao vivo.</p></div>
     <div class="row"><span id="liveBadge" class="tag">conectando…</span>
       <select id="rdays" class="sm">${[7, 14, 30, 60, 90, 180, 365].map((d) => `<option value="${d}" ${d === days ? "selected" : ""}>${d} dias</option>`).join("")}</select>
-      <button class="btn" data-act="csvdia">CSV diário</button><button class="btn" data-act="csv">CSV de vendas</button></div></div>
+      <button class="btn" data-act="csvdia">CSV diário</button><button class="btn" data-act="csvtempo">CSV de tempo</button><button class="btn" data-act="csv">CSV de vendas</button></div></div>
     <div id="live"><p class="hint">Conectando ao vivo…</p></div>
-    <div id="rep"><p class="hint">Calculando relatórios…</p></div>`);
+    <div id="rep"><p class="hint">Calculando relatórios…</p></div>
+    <div id="repTempo"></div>`);
 
   const badge = (ok, txt) => {
     const b = $("#liveBadge");
@@ -1061,15 +1192,18 @@ VIEWS.reports = async function () {
   };
 
   async function load() {
-    const [g, s, p] = await Promise.all([
+    const [g, s, p, t] = await Promise.all([
       api(`/reports/growth?days=${days}`),
       api(`/reports/sales?days=${days}`),
       api(`/reports/players?days=${days}&top=${top}`),
+      api(`/reports/playtime?days=${days}`, { silent: true }).catch(() => null),
     ]);
-    G = g;
+    G = g; T = t;
     const rep = $("#rep");
     if (!rep) return;
     rep.innerHTML = renderReports(g, s, p, top);
+    const rt = $("#repTempo");
+    if (rt) rt.innerHTML = t ? renderTempo(t) : `<div class="warnbox" style="margin-top:14px">Relatório de tempo de jogo indisponível.</div>`;
     const sel = $("#rtop");
     if (sel) sel.onchange = (e) => { top = e.target.value; load(); };
   }
@@ -1083,6 +1217,7 @@ VIEWS.reports = async function () {
     days = +e.target.value;
     sessionStorage.setItem("decay.repDays", days);
     $("#rep").innerHTML = `<p class="hint">Calculando relatórios…</p>`;
+    $("#repTempo").innerHTML = "";
     load();
   };
 
@@ -1092,6 +1227,12 @@ VIEWS.reports = async function () {
       "receitaMp", "receitaPlayEst", "receita", "pagantes", "novosPagantes", "ccuPico", "ccuMedio", "dcComprado", "dcGastoSkins", "dcAdmin"];
     const lines = [cols.join(";"), ...G.serie.map((r) => cols.map((c) => (r[c] == null ? "" : String(r[c]).replace(".", ","))).join(";"))];
     baixarCSV(lines, `diario-${days}d.csv`);
+  };
+  ACTIONS.csvtempo = () => {
+    if (!T) return toast("Relatório de tempo indisponível.", "warn");
+    const cols = ["day", "jogadores", "horas", "mediaMin", "sessaoMin", "pctJogaram"];
+    const lines = [cols.join(";"), ...T.serie.map((r) => cols.map((c) => (r[c] == null ? "" : String(r[c]).replace(".", ","))).join(";"))];
+    baixarCSV(lines, `tempo-${days}d.csv`);
   };
   ACTIONS.csv = async () => {
     const r = await api(`/orders?provider=mp&status=approved&hours=${days * 24}&limit=500`);
@@ -1106,7 +1247,6 @@ VIEWS.reports = async function () {
   await load();
   S.timers.push(setInterval(() => load().catch(() => {}), 60000));
 };
-
 /* ═══════════════════════════════ SKINS ═══════════════════════════════ */
 VIEWS.skins = async function () {
   let skins = [];
@@ -1146,6 +1286,461 @@ VIEWS.skins = async function () {
   await load();
 };
 
+/* ═══════════════════════════════ ROLETA ═══════════════════════════════ */
+const RAR = [["common", "Comum", "var(--muted)"], ["rare", "Raro", "var(--info)"], ["legendary", "Lendário", "var(--gold2)"]];
+const rarTag = (k) => {
+  const x = RAR.find((y) => y[0] === k);
+  return `<span class="tag" style="color:${x ? x[2] : "inherit"}">${esc(x ? x[1] : k)}</span>`;
+};
+
+function novaRoleta(id) {
+  return {
+    rouletteId: id, title: "NOVA ROLETA", description: "", price: 100, currency: "DC",
+    chances: { common: 70, rare: 25, legendary: 5 }, featuredSkinId: -1, freeSpinThreshold: 10,
+    pity: { hardAt: 50, softStart: 35, softStepWeight: 4 }, preferUnowned: true,
+    duplicateRefund: { currency: "DS", common: 20, rare: 60, legendary: 250 },
+    slots: Array.from({ length: 10 }, (_, i) => ({ slotIndex: i, skinId: 0, rarity: i === 0 ? "legendary" : i < 4 ? "rare" : "common" })),
+  };
+}
+
+/** Mesma normalização do master: só raridades com slot entram na conta. */
+function chancesNormalizadas(r) {
+  const present = RAR.map(([k]) => k).filter((k) => (r.slots || []).some((s) => s.rarity === k));
+  const total = present.reduce((a, k) => a + (Number(r.chances?.[k]) || 0), 0);
+  const out = {};
+  for (const [k] of RAR) out[k] = present.includes(k) && total > 0 ? (Number(r.chances?.[k]) || 0) / total : 0;
+  return out;
+}
+
+function girosTable(rows, { jogador = true } = {}) {
+  return table([
+    { h: "Quando", f: (g) => fmtDT(g.createdAt) },
+    jogador
+      ? { h: "Jogador", f: (g) => playerLink(g.playerId, g.playerName) }
+      : { h: "Roleta", f: (g) => `<span class="mono">${esc(g.rouletteId)}</span>` },
+    { h: "Prêmio", f: (g) => `slot ${g.slotIndex + 1} · <b class="mono">${g.skinId}</b>` },
+    { h: "Raridade", f: (g) => rarTag(g.rarity) },
+    { h: "Custo", f: (g) => g.wasFree ? '<span class="tag ok">grátis</span>' : `${fmtN(g.charged)} ${esc(g.currency)}`, num: true },
+    { h: "", f: (g) => [
+      g.pityTriggered ? '<span class="tag gold">pity</span>' : "",
+      g.alreadyOwned ? `<span class="tag">duplicata +${fmtN(g.refundAmount)} ${esc(g.refundCurrency || "")}</span>` : "",
+    ].join(" ") },
+  ], rows, { empty: "Nenhum giro registrado." });
+}
+
+function renderSim(s) {
+  const D = s.distribuicao, C = s.colecao, g = D.lendarioACada;
+  let h = `<div class="grid g4" style="margin-top:14px">
+    ${stat("Lendário a cada", g ? `${fmtDec(g.media, 1)} giros` : "—", g ? `mediana ${fmtN(g.mediana)} · p90 ${fmtN(g.p90)} · máx ${fmtN(g.max)}` : "nenhum lendário saiu", "gold")}
+    ${stat("Custo médio por lendário", g ? `${fmtN(Math.round(g.media * s.price))} ${s.currency}` : "—", "sem descontar giros grátis")}
+    ${stat("Lendário real", pct(D.observado.legendary, 2), `base ${pct(D.esperado.legendary, 2)} · com pity aplicado`, "info")}
+    ${stat("Pity acionado", pct(D.pityPct, 2), `dos ${fmtN(D.spins)} giros simulados`)}
+  </div>
+  <div class="panel" style="margin-top:14px"><h2 style="margin-bottom:10px">Distribuição por raridade</h2>${table([
+    { h: "Raridade", f: (k) => rarTag(k) },
+    { h: "Base (exibida no jogo)", f: (k) => pct(D.esperado[k], 2), num: true },
+    { h: "Real simulada", f: (k) => pct(D.observado[k], 2), num: true },
+    { h: "Diferença", f: (k) => varTag(D.observado[k] - D.esperado[k], { pp: true }), num: true },
+    { h: "Giros", f: (k) => fmtN(D.contagem[k]), num: true },
+  ], RAR.map(([k]) => k))}</div>`;
+
+  if (C) h += `<div class="panel" style="margin-top:14px"><h2 style="margin-bottom:6px">Completar a roleta (${s.unicas} skins diferentes)</h2>
+    <p class="hint" style="margin:0 0 12px">${fmtN(C.jogadores)} jogadores começando do zero, girando até ter todas (limite de ${fmtN(C.maxPorJogador)} giros cada).</p>
+    <div class="grid g4">
+      ${stat("Completaram", pct(C.completaramPct, 1), `dentro de ${fmtN(C.maxPorJogador)} giros`, C.completaramPct >= 0.99 ? "ok" : "danger")}
+      ${stat("Giros até completar", C.giros ? fmtN(Math.round(C.giros.mediana)) : "—", C.giros ? `média ${fmtDec(C.giros.media, 0)} · p90 ${fmtN(C.giros.p90)}` : "")}
+      ${stat("Custo até completar", C.custo ? `${fmtN(Math.round(C.custo.mediana))} ${s.currency}` : "—", C.custo ? `média ${fmtN(Math.round(C.custo.media))} · p90 ${fmtN(C.custo.p90)} · ${fmtDec(C.gratis.media, 1)} grátis em média` : "", "gold")}
+      ${stat("Reembolso de duplicatas", C.reembolso ? `${fmtN(Math.round(C.reembolso.media))} ${s.refundCurrency}` : "—", "média por jogador")}
+    </div></div>`;
+  return h;
+}
+
+VIEWS.roulette = async function (tab = "config") {
+  const d = await api("/roulette");
+  const st = { raw: JSON.parse(JSON.stringify(d.raw || {})), sel: 0, dirty: false, tab, statId: null, statDays: 30 };
+  if (!Array.isArray(st.raw.roulettes)) st.raw.roulettes = [];
+  if (st.raw.activeRouletteId === undefined) st.raw.activeRouletteId = null;
+  const iAtiva = st.raw.roulettes.findIndex((x) => x.rouletteId === st.raw.activeRouletteId);
+  if (iAtiva >= 0) st.sel = iAtiva;
+
+  const existe = new Set(d.skins.map((s) => s.skinId));
+  const skinNome = new Map(d.skins.map((s) => [s.skinId, s.name]));
+  const resumo = new Map((d.resumo || []).map((x) => [x.rouletteId, x]));
+  const cur = () => st.raw.roulettes[st.sel];
+  const nomeSkin = (id) => (skinNome.get(id) ? `${id} · ${esc(skinNome.get(id))}` : `${id}`);
+
+  setMain(`<div class="top"><div><h1>Roleta</h1>
+      <p>Ativa no servidor: <b class="mono">${esc(d.ativaCarregada || "nenhuma")}</b> · preço, chances e pity são decididos aqui; o cliente só envia o rouletteId.
+      <span id="rDirty" class="tag gold" style="display:none">alterações não salvas</span></p></div>
+    <div class="row"><button class="btn" data-act="rreload">Recarregar do disco</button><button class="btn p" data-act="rsave">Salvar e aplicar</button></div></div>
+    ${d.erros?.length ? `<div class="dangerbox" style="margin-bottom:12px"><b>roulette.json no disco tem problemas</b> (o que é inválido não foi carregado):<br>${d.erros.map(esc).join("<br>")}</div>` : ""}
+    ${d.avisos?.length ? `<div class="warnbox" style="margin-bottom:12px">${d.avisos.map(esc).join("<br>")}</div>` : ""}
+    <div class="tabs" id="rtabs"></div><div id="rbody"></div>`);
+
+  const TABS = [["config", "Configuração"], ["stats", "Estatísticas"], ["sim", "Simulador"], ["json", "JSON"]];
+
+  function paint() {
+    $("#rtabs").innerHTML = TABS.map(([k, l]) => `<button class="${k === st.tab ? "on" : ""}" data-act="rtab" data-t="${k}">${l}</button>`).join("");
+    bindActions($("#rtabs"));
+    if (st.tab === "stats") return paintStats();
+    if (st.tab === "sim") return paintSim();
+    if (st.tab === "json") return paintJson();
+    paintConfig();
+  }
+
+  const marcarSujo = () => { st.dirty = true; const b = $("#rDirty"); if (b) b.style.display = ""; };
+
+  // ── Configuração ──────────────────────────────────────────────────────────
+  const selOpts = () => st.raw.roulettes.map((x, i) =>
+    `<option value="${i}" ${i === st.sel ? "selected" : ""}>${esc(x.rouletteId || "(sem id)")}${x.rouletteId === st.raw.activeRouletteId ? " ★ ativa" : ""}</option>`).join("");
+
+  const featOpts = (r) => {
+    const ids = [...new Set(r.slots.map((s) => s.skinId).filter((x) => x > 0))];
+    return `<option value="-1" ${!(r.featuredSkinId > 0) ? "selected" : ""}>Automático (maior raridade)</option>` +
+      ids.map((id) => `<option value="${id}" ${id === r.featuredSkinId ? "selected" : ""}>${nomeSkin(id)}</option>`).join("") +
+      (r.featuredSkinId > 0 && !ids.includes(r.featuredSkinId) ? `<option value="${r.featuredSkinId}" selected>${r.featuredSkinId} · não está nos slots</option>` : "");
+  };
+
+  const skinOpts = (v) =>
+    (existe.has(v) ? "" : `<option value="${v || 0}" selected>${v ? `${v} · NÃO existe em skins.json` : "— escolha uma skin —"}</option>`) +
+    d.skins.map((s) => `<option value="${s.skinId}" ${s.skinId === v ? "selected" : ""}>${s.skinId}${s.name ? ` · ${esc(s.name)}` : ""}${s.slotKey ? "" : " (sem slot)"}${s.available ? "" : " · fora da loja"}</option>`).join("");
+
+  function pityTexto(r) {
+    const p = r.pity || {}, moeda = r.currency || "DC";
+    if (!(p.hardAt > 0)) return "Sem garantia: o lendário depende só da sorte.";
+    let t = `Lendário garantido no <b>${p.hardAt}º</b> giro seguido sem lendário — custo máximo ~<b>${fmtN(p.hardAt * (r.price || 0))} ${esc(moeda)}</b> (sem contar giros grátis).`;
+    if (p.softStart > 0 && p.softStepWeight > 0) t += ` A partir do ${p.softStart + 1}º giro, o peso do lendário sobe +${p.softStepWeight} por giro.`;
+    if (p.softStart > 0 && p.softStart >= p.hardAt) t += ` <span class="tag danger">o pity suave precisa começar antes do garantido</span>`;
+    return t;
+  }
+
+  function avisosLocais(r) {
+    const a = [];
+    const ids = st.raw.roulettes.map((x) => x.rouletteId);
+    if (!r.rouletteId) a.push("rouletteId vazio.");
+    else if (ids.filter((x) => x === r.rouletteId).length > 1) a.push(`rouletteId "${r.rouletteId}" repetido.`);
+    if (r.slots.length !== 10) a.push(`${r.slots.length} slots — o cliente tem 10.`);
+    const vazios = r.slots.filter((s) => !(s.skinId > 0)).length;
+    if (vazios) a.push(`${vazios} slot(s) sem skin.`);
+    const inexist = r.slots.filter((s) => s.skinId > 0 && !existe.has(s.skinId)).length;
+    if (inexist) a.push(`${inexist} skin(s) não existem em skins.json — o master recusa a roleta.`);
+    const preenchidos = r.slots.filter((s) => s.skinId > 0);
+    const dup = preenchidos.length - new Set(preenchidos.map((s) => s.skinId)).size;
+    if (dup > 0) a.push(`${dup} skin(s) aparecem em mais de um slot (permitido, mas aumenta a chance delas).`);
+    if (r.pity?.hardAt > 0 && !r.slots.some((s) => s.rarity === "legendary")) a.push("Pity configurado sem nenhum lendário — será desativado.");
+    if (!RAR.some(([k]) => chancesNormalizadas(r)[k] > 0)) a.push("A soma das chances das raridades presentes é 0.");
+    return a.length
+      ? `<div class="warnbox">${a.map(esc).join("<br>")}</div>`
+      : `<div class="hint" style="color:var(--ok)">Nenhum problema no rascunho.</div>`;
+  }
+
+  /** Atualiza só o que depende dos campos, sem redesenhar (não perde o foco). */
+  function derivados() {
+    const r = cur();
+    if (!r) return;
+    const n = chancesNormalizadas(r);
+    for (const [k] of RAR) { const el = $(`#rch_${k}`); if (el) el.textContent = pct(n[k], 2); }
+    const cnt = {};
+    r.slots.forEach((s) => { cnt[s.rarity] = (cnt[s.rarity] || 0) + 1; });
+    r.slots.forEach((s, i) => { const el = $(`#rsc${i}`); if (el) el.textContent = cnt[s.rarity] ? pct(n[s.rarity] / cnt[s.rarity], 2) : "—"; });
+    const ph = $("#rPity"); if (ph) ph.innerHTML = pityTexto(r);
+    const fs = $("#rFeat"); if (fs) fs.innerHTML = featOpts(r);
+    const sel = $("#rSel"); if (sel) sel.innerHTML = selOpts();
+    const sum = $("#rSum"); if (sum) sum.innerHTML = avisosLocais(r);
+  }
+
+  function paintConfig() {
+    const body = $("#rbody");
+    if (!st.raw.roulettes.length) {
+      body.innerHTML = `<div class="empty">Nenhuma roleta configurada. <button class="btn p sm" data-act="rnew">Criar a primeira</button></div>`;
+      return bindActions(body);
+    }
+
+    const r = cur();
+    r.chances ||= {}; r.pity ||= {}; r.duplicateRefund ||= {}; r.slots ||= [];
+    r.currency ||= "DC"; r.duplicateRefund.currency ||= "DS";
+    r.slots.forEach((s, i) => { s.slotIndex ??= i; s.rarity ||= "common"; s.skinId ??= 0; });
+
+    const ativa = st.raw.activeRouletteId === r.rouletteId;
+    const hist = resumo.get(r.rouletteId);
+    const inp = (k, label, { t = "int", sub = "", step } = {}) =>
+      `<div class="f"><label>${label}</label><input type="number" min="0" ${step ? `step="${step}"` : ""} data-rk="${k}" data-rt="${t}" value="${esc(getP(r, k) ?? "")}">${sub ? `<span class="sub">${sub}</span>` : ""}</div>`;
+    const moeda = (k, label) =>
+      `<div class="f"><label>${label}</label><select data-rk="${k}" data-rt="text">${["DC", "DS"].map((c) => `<option ${getP(r, k) === c ? "selected" : ""}>${c}</option>`).join("")}</select></div>`;
+
+    body.innerHTML = `
+    <div class="row" style="margin-bottom:14px">
+      <select id="rSel" class="sm" style="min-width:220px">${selOpts()}</select>
+      ${ativa ? '<span class="tag gold">ativa</span>' : '<span class="tag">inativa</span>'}
+      <span class="hint">${hist ? `${fmtN(hist.giros)} giros · ${fmtN(hist.jogadores)} jogadores · último há ${ago(hist.ultimo)}` : "sem giros registrados"}</span>
+      <span style="flex:1"></span>
+      <button class="btn sm" data-act="rnew">Nova</button>
+      <button class="btn sm" data-act="rdup">Duplicar</button>
+      ${ativa ? `<button class="btn sm" data-act="ractive" data-on="0">Desativar</button>` : `<button class="btn sm p" data-act="ractive" data-on="1">Tornar ativa</button>`}
+      <button class="btn sm d" data-act="rdel">Excluir</button>
+    </div>
+    <div id="rSum" style="margin-bottom:14px"></div>
+    <div class="grid g2">
+      <div class="panel"><h2>Geral</h2><div class="grid g2">
+        <div class="f"><label>rouletteId</label><input type="text" data-rk="rouletteId" data-rt="text" value="${esc(r.rouletteId || "")}">
+          <span class="sub">Giro grátis e pity são guardados por id. Trocar o id = roleta nova pros jogadores.</span></div>
+        <div class="f"><label>Destaque</label><select id="rFeat" data-rk="featuredSkinId" data-rt="int"></select></div>
+        <div class="f" style="grid-column:1/-1"><label>Título</label><input type="text" data-rk="title" data-rt="text" value="${esc(r.title || "")}"></div>
+        <div class="f" style="grid-column:1/-1"><label>Descrição</label><textarea data-rk="description" data-rt="text" style="min-height:60px">${esc(r.description || "")}</textarea></div>
+        ${inp("price", "Preço do giro")}${moeda("currency", "Moeda do giro")}
+        ${inp("freeSpinThreshold", "Giros pagos para 1 grátis", { sub: "0 = sem giro grátis" })}
+        <div class="f" style="justify-content:flex-end"><label class="check"><input type="checkbox" data-rk="preferUnowned" data-rt="bool" ${r.preferUnowned ? "checked" : ""}> Priorizar skins que o jogador não tem</label></div>
+      </div></div>
+      <div class="panel"><h2>Chances e garantia</h2>
+        <div class="grid g3">${RAR.map(([k, l, c]) => `<div class="f"><label style="color:${c}">${l} (peso)</label><input type="number" min="0" step="0.01" data-rk="chances.${k}" data-rt="float" value="${esc(r.chances[k] ?? 0)}"><span class="sub">real: <b id="rch_${k}">—</b></span></div>`).join("")}</div>
+        <p class="hint" style="margin:6px 0 14px">Os pesos são normalizados entre as raridades que têm slot. O "real" é o que aparece no jogo.</p>
+        <div class="grid g3">
+          ${inp("pity.hardAt", "Garantido no giro", { sub: "0 = sem pity" })}
+          ${inp("pity.softStart", "Pity suave a partir de", { sub: "0 = desligado" })}
+          ${inp("pity.softStepWeight", "Peso extra por giro", { t: "float", step: "0.1" })}
+        </div>
+        <p class="hint" id="rPity" style="margin:6px 0 14px"></p>
+        <h3 style="margin-bottom:8px">Reembolso de duplicata</h3>
+        <div class="grid g4">${moeda("duplicateRefund.currency", "Moeda")}${RAR.map(([k, l]) => inp(`duplicateRefund.${k}`, l)).join("")}</div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:14px"><div class="ph"><h2>Slots</h2>
+      ${r.slots.length !== 10 ? `<button class="btn sm" data-act="rfix10">Ajustar para 10 slots</button>` : `<span class="hint">Slot 1 = filho "1" da roleta na Unity</span>`}</div>
+      <div class="tw"><table><thead><tr><th>Slot</th><th>Skin</th><th>Raridade</th><th class="num">Chance individual</th></tr></thead><tbody>
+      ${r.slots.map((s, i) => `<tr>
+        <td><b>${s.slotIndex + 1}</b> <span class="hint mono">idx ${s.slotIndex}</span></td>
+        <td><select class="sm" style="min-width:280px" data-rk="slots.${i}.skinId" data-rt="int">${skinOpts(s.skinId)}</select></td>
+        <td><select class="sm" data-rk="slots.${i}.rarity" data-rt="text">${RAR.map(([k, l]) => `<option value="${k}" ${s.rarity === k ? "selected" : ""}>${l}</option>`).join("")}</select></td>
+        <td class="num" id="rsc${i}">—</td></tr>`).join("")}
+      </tbody></table></div></div>`;
+
+    $$("[data-rk]", body).forEach((el) => {
+      el.onchange = () => {
+        const t = el.dataset.rt, k = el.dataset.rk;
+        let v = t === "bool" ? el.checked : t === "int" ? parseInt(el.value, 10) : t === "float" ? parseFloat(el.value) : el.value.trim();
+        if ((t === "int" || t === "float") && !Number.isFinite(v)) v = 0;
+        if (k === "rouletteId" && st.raw.activeRouletteId === cur().rouletteId) st.raw.activeRouletteId = v;
+        setP(cur(), k, v);
+        marcarSujo();
+        derivados();
+      };
+    });
+    $("#rSel", body).onchange = (e) => { st.sel = +e.target.value; paintConfig(); };
+    bindActions(body);
+    derivados();
+  }
+
+  // ── Estatísticas ──────────────────────────────────────────────────────────
+  function renderStats(s) {
+    const T = s.totais, C = s.config, P = s.progresso || {};
+    const moeda = T.moeda || C?.currency || "DC";
+    if (!T.giros) return `<div class="empty">Nenhum giro de <b>${esc(s.rouletteId)}</b> no período.</div>`;
+
+    const porRar = new Map(s.porRaridade.map((x) => [x.rarity, x.n]));
+    const cntRar = {};
+    (C?.slots || []).forEach((x) => { cntRar[x.rarity] = (cntRar[x.rarity] || 0) + 1; });
+    const porSlot = (C?.slots || []).map((x) => ({
+      ...x,
+      n: s.porSlot.filter((y) => y.slotIndex === x.slotIndex && y.skinId === x.skinId).reduce((a, y) => a + y.n, 0),
+      esp: C.esperado[x.rarity] / (cntRar[x.rarity] || 1),
+    }));
+    const reemb = s.reembolsos.map((x) => `${fmtN(x.total)} ${esc(x.currency)}`).join(" + ") || "nenhum";
+    const dias = s.porDia.map((x) => x.day);
+
+    return `
+    ${!C ? `<div class="warnbox" style="margin-bottom:12px">Essa roleta não está carregada no servidor: a comparação com as chances configuradas fica indisponível.</div>` : ""}
+    <div class="grid g4">
+      ${stat("Giros", fmtN(T.giros), `${fmtN(T.giros - T.gratis)} pagos · ${fmtN(T.gratis)} grátis`, "info")}
+      ${stat("Moeda gasta", `${fmtN(T.gasto)} ${esc(moeda)}`, `${fmtN(T.jogadores)} jogadores · ${fmtN(Math.round(T.gasto / Math.max(1, T.jogadores)))} ${esc(moeda)}/jogador`, "gold")}
+      ${stat("Lendários", fmtN(T.lendarios), `${pct(T.lendarios / T.giros, 2)} dos giros · ${fmtN(T.pity)} por pity`, "ok")}
+      ${stat("Duplicatas", fmtN(T.duplicatas), `${pct(T.duplicatas / T.giros, 1)} · reembolso ${reemb}`)}
+      ${stat("Jogadores com progresso", fmtN(P.jogadores || 0), `média de ${fmtDec(P.mediaSemLendario || 0, 1)} giros sem lendário`)}
+      ${stat("Giros grátis pendentes", fmtN(P.gratisPendentes || 0), "concedidos e ainda não usados")}
+      ${stat("Perto do pity", fmtN(P.pertoDoPity || 0), C?.pity?.hardAt ? `a até 5 giros do garantido (${C.pity.hardAt})` : "pity desligado")}
+      ${stat("Preço atual", C ? `${fmtN(C.price)} ${esc(C.currency)}` : "—", C?.pity?.hardAt ? `garantia em ${C.pity.hardAt} giros` : "")}
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="panel"><h2 style="margin-bottom:10px">Giros por dia</h2>${lineChart(dias, [
+        { name: "Giros", values: s.porDia.map((x) => x.giros), color: "var(--info)", w: 2.5 },
+        { name: "Jogadores", values: s.porDia.map((x) => x.jogadores), color: "var(--ok)" },
+      ])}</div>
+      <div class="panel"><h2 style="margin-bottom:10px">${esc(moeda)} gasto por dia</h2>${lineChart(dias, [
+        { name: moeda, values: s.porDia.map((x) => x.gasto), color: "var(--gold)", w: 2.5 },
+      ])}</div>
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="panel"><h2 style="margin-bottom:10px">Raridade: real × configurada</h2>${table([
+        { h: "Raridade", f: (k) => rarTag(k) },
+        { h: "Giros", f: (k) => fmtN(porRar.get(k) || 0), num: true },
+        { h: "Real", f: (k) => pct((porRar.get(k) || 0) / T.giros, 2), num: true },
+        { h: "Configurada", f: (k) => (C ? pct(C.esperado[k], 2) : "—"), num: true },
+        { h: "Diferença", f: (k) => (C ? varTag((porRar.get(k) || 0) / T.giros - C.esperado[k], { pp: true }) : ""), num: true },
+      ], RAR.map(([k]) => k))}
+        <p class="hint" style="margin-top:8px">Com pity, o lendário real fica acima do configurado, e isso é esperado. Com poucos giros, diferenças grandes são só variância.</p></div>
+      <div class="panel"><h2 style="margin-bottom:10px">Por slot</h2>${table([
+        { h: "Slot", f: (x) => x.slotIndex + 1 },
+        { h: "Skin", f: (x) => nomeSkin(x.skinId) },
+        { h: "Raridade", f: (x) => rarTag(x.rarity) },
+        { h: "Saiu", f: (x) => fmtN(x.n), num: true },
+        { h: "Real", f: (x) => pct(x.n / T.giros, 2), num: true },
+        { h: "Configurada", f: (x) => pct(x.esp, 2), num: true },
+      ], porSlot, { empty: "Configuração indisponível." })}</div>
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="panel"><h2 style="margin-bottom:10px">Quem mais girou</h2>${table([
+        { h: "Jogador", f: (x) => playerLink(x.playerId, x.playerName) },
+        { h: "Giros", f: (x) => fmtN(x.giros), num: true },
+        { h: "Gasto", f: (x) => `${fmtN(x.gasto)} ${esc(moeda)}`, num: true },
+        { h: "Lendários", f: (x) => fmtN(x.lendarios), num: true },
+      ], s.top)}</div>
+      <div class="panel"><h2 style="margin-bottom:10px">Últimos giros</h2>${girosTable(s.recentes)}</div>
+    </div>`;
+  }
+
+  async function paintStats() {
+    const body = $("#rbody");
+    const ids = [...new Set([...st.raw.roulettes.map((x) => x.rouletteId), ...(d.resumo || []).map((x) => x.rouletteId)].filter(Boolean))];
+    if (!ids.length) { body.innerHTML = `<div class="empty">Nenhuma roleta ainda.</div>`; return; }
+    if (!st.statId || !ids.includes(st.statId)) st.statId = ids.includes(d.ativaCarregada) ? d.ativaCarregada : ids[0];
+
+    body.innerHTML = `<div class="row" style="margin-bottom:12px">
+      <select id="rsId" class="sm">${ids.map((id) => `<option ${id === st.statId ? "selected" : ""}>${esc(id)}</option>`).join("")}</select>
+      <select id="rsDays" class="sm">${[1, 7, 14, 30, 90, 365].map((n) => `<option value="${n}" ${n === st.statDays ? "selected" : ""}>${n === 1 ? "Hoje" : `${n} dias`}</option>`).join("")}</select>
+      <button class="btn sm" data-act="rstats">Atualizar</button></div>
+      <div id="rsOut"><p class="hint">Carregando…</p></div>`;
+    $("#rsId").onchange = (e) => { st.statId = e.target.value; paintStats(); };
+    $("#rsDays").onchange = (e) => { st.statDays = +e.target.value; paintStats(); };
+    bindActions(body);
+
+    const s = await api(`/roulette/stats?rouletteId=${encodeURIComponent(st.statId)}&days=${st.statDays}`);
+    const out = $("#rsOut");
+    if (out) out.innerHTML = renderStats(s);
+  }
+
+  // ── Simulador ─────────────────────────────────────────────────────────────
+  function paintSim() {
+    const body = $("#rbody");
+    const r = cur();
+    if (!r) { body.innerHTML = `<div class="empty">Crie uma roleta primeiro.</div>`; return; }
+    body.innerHTML = `<div class="panel"><h2>Simular "${esc(r.rouletteId)}"</h2>
+      <p class="hint" style="margin:4px 0 12px">Roda o mesmo algoritmo do master com o rascunho atual, incluindo o que ainda não foi salvo. Nada é gravado.</p>
+      <div class="row" style="align-items:flex-end">
+        <div class="f"><label>Giros (distribuição)</label><input type="number" id="smSpins" value="100000" min="1000" max="300000" style="width:150px"></div>
+        <div class="f"><label>Jogadores (coleção completa)</label><input type="number" id="smPlayers" value="300" min="0" max="1000" style="width:150px"></div>
+        <div class="f"><label>Limite de giros por jogador</label><input type="number" id="smMax" value="2000" min="10" max="5000" style="width:150px"></div>
+        <button class="btn p" data-act="rsim">Simular</button>
+      </div></div><div id="smOut"></div>`;
+    bindActions(body);
+  }
+
+  // ── JSON ──────────────────────────────────────────────────────────────────
+  function paintJson() {
+    $("#rbody").innerHTML = `<div class="panel"><p class="hint" style="margin:0 0 10px">Conteúdo completo de data/roulette.json. "Salvar e aplicar" valida tudo no master antes de gravar.</p>
+      <textarea id="rJson" class="code" style="min-height:65vh">${esc(JSON.stringify(st.raw, null, 2))}</textarea></div>`;
+  }
+
+  function lerJson() {
+    const ta = $("#rJson");
+    if (!ta) return true;
+    try {
+      const v = JSON.parse(ta.value);
+      if (!v || !Array.isArray(v.roulettes)) throw new Error("o objeto precisa ter roulettes: []");
+      if (JSON.stringify(v) !== JSON.stringify(st.raw)) { st.raw = v; st.sel = 0; marcarSujo(); }
+      return true;
+    } catch (e) {
+      toast(`JSON inválido: ${e.message}`, "err");
+      return false;
+    }
+  }
+
+  // ── Ações ─────────────────────────────────────────────────────────────────
+  ACTIONS.rtab = (x) => {
+    if (st.tab === "json" && !lerJson()) return;
+    st.tab = x.t;
+    history.replaceState(null, "", `#/roulette/${x.t}`);
+    paint();
+  };
+  ACTIONS.rstats = () => paintStats();
+
+  ACTIONS.rnew = async () => {
+    const id = await confirmar("Nova roleta", "Identificador fixo (letras, números, _ e -).", { okLabel: "Criar", campo: { label: "rouletteId", placeholder: "temporada_02" } });
+    if (id == null) return;
+    const v = id.trim();
+    if (!/^[\w-]{2,40}$/.test(v)) return toast("rouletteId inválido.", "warn");
+    if (st.raw.roulettes.some((x) => x.rouletteId === v)) return toast("Esse rouletteId já existe.", "warn");
+    st.raw.roulettes.push(novaRoleta(v));
+    st.sel = st.raw.roulettes.length - 1;
+    marcarSujo(); paintConfig();
+  };
+
+  ACTIONS.rdup = () => {
+    const c = JSON.parse(JSON.stringify(cur()));
+    let n = 2;
+    while (st.raw.roulettes.some((x) => x.rouletteId === `${c.rouletteId}_${n}`)) n++;
+    c.rouletteId = `${c.rouletteId}_${n}`;
+    st.raw.roulettes.push(c);
+    st.sel = st.raw.roulettes.length - 1;
+    marcarSujo(); paintConfig();
+  };
+
+  ACTIONS.rdel = async () => {
+    const r = cur();
+    if (!(await confirmar("Excluir roleta", `Remove <b>${esc(r.rouletteId)}</b> do arquivo. O histórico de giros e o progresso dos jogadores continuam no banco.`, { danger: true, okLabel: "Excluir" }))) return;
+    if (st.raw.activeRouletteId === r.rouletteId) st.raw.activeRouletteId = null;
+    st.raw.roulettes.splice(st.sel, 1);
+    st.sel = Math.max(0, st.sel - 1);
+    marcarSujo(); paintConfig();
+  };
+
+  ACTIONS.ractive = (x) => {
+    st.raw.activeRouletteId = x.on === "1" ? cur().rouletteId : null;
+    marcarSujo(); paintConfig();
+  };
+
+  ACTIONS.rfix10 = () => {
+    const r = cur();
+    r.slots = Array.from({ length: 10 }, (_, i) => (r.slots[i] ? { ...r.slots[i], slotIndex: i } : { slotIndex: i, skinId: 0, rarity: "common" }));
+    marcarSujo(); paintConfig();
+  };
+
+  ACTIONS.rsim = async () => {
+    const out = $("#smOut");
+    out.innerHTML = `<p class="hint" style="margin-top:14px">Simulando…</p>`;
+    let x = null;
+    try {
+      x = await api("/roulette/simulate", {
+        method: "POST",
+        silent: true,
+        body: { roulette: cur(), spins: +$("#smSpins").value, players: +$("#smPlayers").value, maxSpinsPerPlayer: +$("#smMax").value },
+      });
+    } catch (e) {
+      if ($("#smOut")) $("#smOut").innerHTML = `<div class="dangerbox" style="margin-top:14px">${esc(e.message)}</div>`;
+      return;
+    }
+    if ($("#smOut")) $("#smOut").innerHTML = renderSim(x.sim);
+  };
+
+  ACTIONS.rsave = async () => {
+    if (st.tab === "json" && !lerJson()) return;
+    if (st.raw.activeRouletteId == null &&
+        !(await confirmar("Sem roleta ativa", "Nenhuma roleta está marcada como ativa: a aba de roleta no jogo vai mostrar erro de carregamento.", { okLabel: "Salvar mesmo assim" }))) return;
+    const x = await api("/roulette", { method: "PUT", body: { config: st.raw } });
+    toast(`Roleta salva · ${x.count} carregada(s) · ativa: ${x.activeId || "nenhuma"}`);
+    if (x.avisos?.length) toast(x.avisos.join(" · "), "warn", 8000);
+    st.dirty = false;
+    route();
+  };
+
+  ACTIONS.rreload = async () => {
+    if (st.dirty && !(await confirmar("Descartar rascunho", "As alterações não salvas serão perdidas.", { danger: true, okLabel: "Descartar" }))) return;
+    const x = await api("/roulette/reload", { method: "POST", body: {} });
+    toast(`${x.count} roleta(s) carregada(s) do disco.`);
+    route();
+  };
+
+  paint();
+};
+
 /* ═══════════════════════════════ POP-UPS ═══════════════════════════════ */
 
 const POPUP_FREQ = [
@@ -1154,6 +1749,10 @@ const POPUP_FREQ = [
   ["daily", "Uma vez por dia"],
 ];
 const POPUP_PLATS = ["android", "ios", "windows", "osx"];
+const POPUP_LANGS = [["pt", "Português"], ["en", "Inglês"], ["es", "Espanhol"]];
+
+/** "skins-outubro-pt" → "skins-outubro". Agrupa as versões de uma mesma campanha. */
+const baseDoPopup = (id) => String(id || "").replace(/-(pt|en|es)$/, "");
 
 const dtLocal = (s) => {
   if (!s) return "";
@@ -1189,10 +1788,14 @@ VIEWS.popups = async function () {
       { h: "Botão", f: (p) => p.linkUrl ? `<a href="${esc(p.linkUrl)}" target="_blank" rel="noopener">${esc(p.buttonText || "abrir link")}</a>` : '<span class="hint">só fechar</span>' },
       { h: "Frequência", f: (p) => `<span class="tag">${esc((POPUP_FREQ.find((f) => f[0] === p.frequency) || [, p.frequency])[1])}</span>` },
       { h: "Período", f: (p) => p.startAt || p.endAt ? `${p.startAt ? fmtDT(p.startAt) : "—"} → ${p.endAt ? fmtDT(p.endAt) : "—"}` : '<span class="hint">sempre</span>' },
-      { h: "Alvo", f: (p) => (p.platforms?.length ? p.platforms : ["todas"]).map((x) => `<span class="tag">${esc(x)}</span>`).join(" ") },
+      { h: "Idioma", f: (p) => p.languages?.length
+          ? p.languages.map((x) => `<span class="tag info">${esc(x.toUpperCase())}</span>`).join(" ")
+          : '<span class="hint">todos</span>' },
+      { h: "Plataforma", f: (p) => (p.platforms?.length ? p.platforms : ["todas"]).map((x) => `<span class="tag">${esc(x)}</span>`).join(" ") },
       { h: "Status", f: (p) => p.enabled === false ? '<span class="tag">desligado</span>' : '<span class="tag ok">no ar</span>' },
       { h: "", f: (p, i) => `<button class="btn sm" data-act="up" data-id="${esc(p.popupId)}">↑</button>
         <button class="btn sm" data-act="down" data-id="${esc(p.popupId)}">↓</button>
+        <button class="btn sm" data-act="dup" data-id="${esc(p.popupId)}">Traduzir</button>
         <button class="btn sm" data-act="edit" data-id="${esc(p.popupId)}">Editar</button>
         <button class="btn sm" data-act="touch" data-id="${esc(p.popupId)}">Forçar download</button>
         <button class="btn sm d" data-act="rm" data-id="${esc(p.popupId)}">Excluir</button>` },
@@ -1200,13 +1803,24 @@ VIEWS.popups = async function () {
     bindActions($("#pplist"));
   }
 
-  const form = (p = {}) => {
-    const novo = !p.popupId;
-    let imageUrl = p.imageUrl || "", imageHash = p.imageHash || "";
+  function sugestaoTraducao(p) {
+    const base = baseDoPopup(p.popupId);
+    const usados = new Set(lista.filter((x) => baseDoPopup(x.popupId) === base).flatMap((x) => x.languages || []));
+    const livre = POPUP_LANGS.map(([k]) => k).find((k) => !usados.has(k));
+    return livre ? { id: `${base}-${livre}`, langs: [livre] } : { id: `${base}-copia`, langs: [] };
+  }
 
-    const box = modal(`<h2>${novo ? "Novo pop-up" : esc(p.titulo || p.popupId)}</h2>
+  const form = (p = {}, { traduzir = false } = {}) => {
+    const novo = !p.popupId || traduzir;
+    const sug = traduzir ? sugestaoTraducao(p) : null;
+    const idInicial = sug ? sug.id : p.popupId || "";
+    const langsIniciais = sug ? sug.langs : p.languages || [];
+    let imageUrl = p.imageUrl || "", imageHash = traduzir ? "" : p.imageHash || "";
+
+    const box = modal(`<h2>${traduzir ? `Traduzir "${esc(p.titulo || p.popupId)}"` : novo ? "Novo pop-up" : esc(p.titulo || p.popupId)}</h2>
+      ${traduzir ? `<div class="warnbox" style="margin-bottom:12px">Cópia de <b>${esc(p.popupId)}</b>. Troque a arte e o texto do botão para o idioma marcado abaixo.</div>` : ""}
       <div class="grid g2">
-        <div class="f"><label>popupId</label><input type="text" id="ppId" value="${esc(p.popupId || "")}" ${novo ? "" : "readonly"} placeholder="skins-outubro">
+        <div class="f"><label>popupId</label><input type="text" id="ppId" value="${esc(idInicial)}" ${novo ? "" : "readonly"} placeholder="skins-outubro-pt">
           <span class="sub">Identidade fixa. Trocar o id faz o jogador ver o pop-up de novo.</span></div>
         <div class="f"><label>Título (só para o painel)</label><input type="text" id="ppTitulo" value="${esc(p.titulo || "")}"></div>
       </div>
@@ -1226,6 +1840,9 @@ VIEWS.popups = async function () {
       </div>
       <div class="f" style="margin-top:10px"><label>Plataformas (nenhuma marcada = todas)</label>
         <div class="row">${POPUP_PLATS.map((x) => `<label class="check"><input type="checkbox" data-plat="${x}" ${p.platforms?.includes(x) ? "checked" : ""}> ${x}</label>`).join("")}</div></div>
+        <div class="f" style="margin-top:10px"><label>Idiomas (nenhum marcado = todos)</label>
+        <div class="row">${POPUP_LANGS.map(([k, l]) => `<label class="check"><input type="checkbox" data-lang="${k}" ${langsIniciais.includes(k) ? "checked" : ""}> ${l}</label>`).join("")}</div>
+        <span class="sub">Para traduzir, crie uma versão por idioma terminando em -pt, -en ou -es (ex.: skins-outubro-pt). Use o botão "Traduzir" na lista.</span></div>
       <div class="f" style="margin-top:10px"><label>Builds do cliente (uma por linha, vazio = todas)</label>
         <textarea id="ppBuilds" class="code" style="min-height:60px">${esc((p.builds || []).join("\n"))}</textarea></div>
       <label class="check" style="margin-top:10px"><input type="checkbox" id="ppOn" ${p.enabled !== false ? "checked" : ""}> No ar</label>
@@ -1266,9 +1883,19 @@ VIEWS.popups = async function () {
         startAt: dtEpoch($("#ppStart", box).value),
         endAt: dtEpoch($("#ppEnd", box).value),
         platforms: $$("[data-plat]", box).filter((c) => c.checked).map((c) => c.dataset.plat),
+        languages: $$("[data-lang]", box).filter((c) => c.checked).map((c) => c.dataset.lang),
         builds: $("#ppBuilds", box).value.split("\n").map((s) => s.trim()).filter(Boolean),
         enabled: $("#ppOn", box).checked,
       };
+      const base = baseDoPopup(body.popupId);
+      const irmaos = lista.filter((x) => x.popupId !== body.popupId && baseDoPopup(x.popupId) === base && x.enabled !== false);
+      if (body.enabled && irmaos.length) {
+        if (!body.languages.length)
+          return toast(`Já existem versões de "${base}" (${irmaos.map((x) => x.popupId).join(", ")}). Marque o idioma desta.`, "warn", 6000);
+        const choque = irmaos.find((x) => !x.languages?.length || x.languages.some((l) => body.languages.includes(l)));
+        if (choque)
+          return toast(`${choque.popupId} já cobre ${choque.languages?.length ? choque.languages.join(", ").toUpperCase() : "todos os idiomas"}. O jogador veria os dois.`, "warn", 6000);
+      }
       await api("/popups", { method: "POST", body });
       closeModal(); toast("Pop-up salvo. Vale no próximo boot do jogador."); load();
     };
@@ -1285,7 +1912,7 @@ VIEWS.popups = async function () {
 
   setMain(`<div class="top"><div><h1>Pop-ups</h1><p id="ppInfo"></p></div>
       <div class="row"><button class="btn" data-act="reload">Atualizar</button><button class="btn p" data-act="new">Novo pop-up</button></div></div>
-    <p class="hint" style="margin:0 0 12px">Os pop-ups aparecem em ordem quando o jogador abre o menu principal. A arte fica salva no aparelho: trocar a imagem aqui (ou usar "Forçar download") faz o cliente baixar a nova e apagar a antiga sozinho.</p>
+      <p class="hint" style="margin:0 0 12px">Os pop-ups aparecem em ordem quando o jogador abre o menu principal. A arte fica salva no aparelho: trocar a imagem aqui (ou usar "Forçar download") faz o cliente baixar a nova e apagar a antiga sozinho. Cada jogador só recebe os pop-ups do idioma configurado no jogo (ou os marcados como "todos").</p>
     <div id="pplist"></div>`);
 
   ACTIONS.reload = load;
@@ -1300,6 +1927,7 @@ VIEWS.popups = async function () {
     }
   };
 
+  ACTIONS.dup = (d) => form(lista.find((p) => p.popupId === d.id), { traduzir: true });
   await load();
 };
 
@@ -1352,7 +1980,7 @@ const CFG_SCHEMA = [
     ["push.reengagementIntervalMinutes", "Intervalo do job (min)", "int"], ["push.reengagementMaxPerRun", "Máx. por rodada", "int"],
     ["push.reengagementInactiveHours", "Inativo há pelo menos (h)", "int"], ["push.reengagementMaxInactiveDays", "Inativo há no máximo (dias)", "int"],
     ["push.reengagementCooldownHours", "Cooldown entre pushes (h)", "int"], ["push.reengagementMaxStreak", "Máx. pushes sem retorno", "int"],
-    ["push.quietHoursEnd", "Enviar a partir de (hora local)", "int"], ["push.quietHoursStart", "Enviar até (hora local)", "int"], ["push.suprimirSeOnlineNoChat", "Suprimir raid alert se online no chat", "bool"],
+    ["push.quietHoursEnd", "Enviar a partir de (hora local)", "int"], ["push.quietHoursStart", "Enviar até (hora local)", "int"],
     ["pushStorePath", "Arquivo de tokens push", "text", null, true],
   ]],
   ["Google Play Watcher", [
@@ -1418,7 +2046,7 @@ VIEWS.logs = async function () {
     r.rows.filter(passes).forEach((e) => box.appendChild(line(e))); lastSeq = r.lastSeq; box.scrollTop = box.scrollHeight;
   }
   setMain(`<div class="top"><div><h1>Logs</h1><p>Últimas linhas do processo, ao vivo. <span id="lstate" class="tag ok">conectado</span></p></div>
-    <div class="row"><select id="llev" class="sm"><option value="all">Todos os níveis</option><option value="error">error</option><option value="warn">warn</option><option value="info">info</option><option value="debug">debug</option><option value="chat">chat</option></select>
+    <div class="row"><select id="llev" class="sm"><option value="all">Todos os níveis</option><option value="error">error</option><option value="warn">warn</option><option value="info">info</option><option value="debug">debug</option></select>
       <input type="text" id="lq" class="sm" placeholder="filtrar texto" style="width:220px"><button class="btn" data-act="pause" id="lpause">Pausar</button><button class="btn" data-act="clear">Limpar tela</button></div></div>
     <div id="logbox"></div>`);
   $("#llev").onchange = (e) => { level = e.target.value; load(); };
@@ -1445,7 +2073,7 @@ VIEWS.audit = async function () {
     bindActions($("#alist"));
   }
   setMain(`<div class="top"><div><h1>Auditoria</h1><p>Tudo que foi feito por este painel: quem, quando, em quem.</p></div>
-    <div class="row"><select id="aact" class="sm"><option value="">Toda ação</option>${["player", "coins", "ban", "server", "order", "skins", "packages", "config", "push", "chat", "play"].map((a) => `<option>${a}</option>`).join("")}</select><input type="text" id="atgt" class="sm" placeholder="alvo (playerId, orderId…)" style="width:200px"></div></div><div id="alist"></div>`);
+    <div class="row"><select id="aact" class="sm"><option value="">Toda ação</option>${["player", "coins", "ban", "server", "order", "skins", "roulette", "packages", "config", "push", "play"].map((a) => `<option>${a}</option>`).join("")}</select><input type="text" id="atgt" class="sm" placeholder="alvo (playerId, orderId…)" style="width:200px"></div></div><div id="alist"></div>`);
   $("#aact").onchange = (e) => { st.action = e.target.value; st.offset = 0; load(); };
   $("#atgt").oninput = () => { st.target = $("#atgt").value.trim(); st.offset = 0; load(); };
   ACTIONS.page = (d) => { st.offset = Number(d.offset); load(); };

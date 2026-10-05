@@ -1,0 +1,77 @@
+{
+  "activeRouletteId": "roullet",
+  "roulettes": [
+    {
+      "rouletteId": "roullet",
+      "title": "RAID ROLETA",
+      "description": "",
+      "price": 100,
+      "currency": "DC",
+      "chances": {
+        "common": 70,
+        "rare": 25,
+        "legendary": 5
+      },
+      "featuredSkinId": -1,
+      "freeSpinThreshold": 10,
+      "pity": {
+        "hardAt": 50,
+        "softStart": 35,
+        "softStepWeight": 4
+      },
+      "preferUnowned": false,
+      "slots": [
+        {
+          "slotIndex": 0,
+          "skinId": 2001,
+          "rarity": "legendary"
+        },
+        {
+          "slotIndex": 1,
+          "skinId": 2003,
+          "rarity": "rare"
+        },
+        {
+          "slotIndex": 2,
+          "skinId": 2008,
+          "rarity": "rare"
+        },
+        {
+          "slotIndex": 3,
+          "skinId": 2012,
+          "rarity": "rare"
+        },
+        {
+          "slotIndex": 4,
+          "skinId": 2007,
+          "rarity": "common"
+        },
+        {
+          "slotIndex": 5,
+          "skinId": 2006,
+          "rarity": "common"
+        },
+        {
+          "slotIndex": 6,
+          "skinId": 2005,
+          "rarity": "common"
+        },
+        {
+          "slotIndex": 7,
+          "skinId": 2004,
+          "rarity": "common"
+        },
+        {
+          "slotIndex": 8,
+          "skinId": 2013,
+          "rarity": "common"
+        },
+        {
+          "slotIndex": 9,
+          "skinId": 2011,
+          "rarity": "common"
+        }
+      ]
+    }
+  ]
+}

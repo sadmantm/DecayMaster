@@ -28,6 +28,14 @@ const MIMES = {
 };
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
+const IDIOMAS = ["pt", "en", "es"];
+
+/** Aceita "pt", "pt-BR", "pt_br", "PT"... e devolve "pt". Desconhecido = "". */
+function normalizarIdioma(v) {
+  const s = String(v || "").trim().toLowerCase().slice(0, 2);
+  return IDIOMAS.includes(s) ? s : "";
+}
+
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 const sha1 = (v) => crypto.createHash("sha1").update(v).digest("hex");
 
@@ -146,6 +154,9 @@ class PopupStore {
       endAt: dados.endAt ? Math.trunc(+dados.endAt) : null,
       platforms: Array.isArray(dados.platforms) ? dados.platforms.map(slugSimples).filter(Boolean) : [],
       builds: Array.isArray(dados.builds) ? dados.builds.map((b) => String(b).trim()).filter(Boolean) : [],
+      languages: Array.isArray(dados.languages)
+        ? [...new Set(dados.languages.map(normalizarIdioma).filter(Boolean))]
+        : anterior?.languages ?? [],
       createdAt: anterior?.createdAt || nowSeconds(),
       updatedAt,
     };
@@ -235,16 +246,18 @@ class PopupStore {
   }
 
   /** O que este cliente deve ver agora. */
-  ativosPara({ platform, build } = {}) {
+  ativosPara({ platform, build, lang } = {}) {
     const agora = nowSeconds();
     const plat = slugSimples(platform);
+    const idioma = normalizarIdioma(lang);
     return this.popups.filter(
       (p) =>
         p.enabled !== false &&
         (!p.startAt || p.startAt <= agora) &&
         (!p.endAt || p.endAt > agora) &&
         (!p.platforms?.length || (plat && p.platforms.includes(plat))) &&
-        (!p.builds?.length || (build && p.builds.includes(String(build)))),
+        (!p.builds?.length || (build && p.builds.includes(String(build)))) &&
+        (!p.languages?.length || (idioma && p.languages.includes(idioma))),
     );
   }
 }
@@ -303,9 +316,10 @@ function registrarRotasPopups(app, { config, logger, popupStore, rateLimiter, au
 
   // ── público (sem login: a cena de menu pode carregar antes do auth) ──
   app.get("/popups", limite, (req, res) => {
-    const rows = store.ativosPara({ platform: req.query.platform, build: req.query.build });
+    const lang = normalizarIdioma(req.query.lang);
+    const rows = store.ativosPara({ platform: req.query.platform, build: req.query.build, lang });
     res.set("Cache-Control", "no-cache");
-    res.json({ ok: true, revision: store.revision, popups: rows.map(viewPublica) });
+    res.json({ ok: true, revision: store.revision, lang, popups: rows.map(viewPublica) });
   });
 
   // ── admin ──
@@ -381,4 +395,4 @@ function registrarRotasPopups(app, { config, logger, popupStore, rateLimiter, au
   return store;
 }
 
-module.exports = { PopupStore, registrarRotasPopups, viewPublica, FREQUENCIAS };
+module.exports = { PopupStore, registrarRotasPopups, viewPublica, FREQUENCIAS, IDIOMAS };

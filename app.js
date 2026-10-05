@@ -5,7 +5,6 @@ const path = require("path");
 const Database = require("better-sqlite3");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const { WebSocketServer } = require("ws");
 const http = require("http");
 const { GoogleAuth } = require("google-auth-library");
 const {
@@ -20,6 +19,8 @@ const { PlayWatcher } = require("./play-watcher");
 const { ShopStore, registrarRotasLoja, iniciarJobsDaLoja,
   processPayment, findPaymentByOrderId } = require("./shop-dc");
 const { registrarRotasAdmin } = require("./admin-routes");
+const { RouletteStore, registrarRotasRoleta } = require("./roulette");
+
 
 // ===== UTILITY FUNCTIONS =====
 
@@ -105,10 +106,7 @@ function validateTypes(spec, body) {
   return errors.length > 0 ? errors.join("; ") : null;
 }
 function onCredited(playerId, totalDC, balanceDC, orderId) {
-  const c = chatClients.get(playerId) || chatClients.get(String(playerId));
-  if (c?.ws.readyState === 1) {
-    c.ws.send(JSON.stringify({ type: "dc_credited", totalDC, balanceDC, orderId }));
-  }
+  logger.info(`[Loja] ${playerId} creditado: +${totalDC} DC (saldo ${balanceDC}) ref=${orderId}`);
 }
 // ===== LOGGER =====
 
@@ -622,6 +620,7 @@ class DataStore {
       joinToken: tokenData.joinToken,
       serverId: tokenData.serverId,
       playerId: tokenData.playerId,
+      accountId: tokenData.accountId ?? null, // playerId numérico da conta, se o cliente mandou a sessão
       playerName: tokenData.playerName,
       clientBuildVersion: tokenData.clientBuildVersion,
       expiresAt: tokenData.expiresAt,
@@ -665,6 +664,7 @@ class DataStore {
       valid: true,
       playerName: token.playerName,
       clientBuildVersion: token.clientBuildVersion,
+      accountId: token.accountId ?? null,
     };
   }
 
@@ -786,6 +786,7 @@ class AuthStore {
     this.db = new Database(path.join(dbDir, "accounts.db"));
     this.db.pragma("journal_mode = WAL");
     this._initSchema();
+    this._initPlaytimeSchema();
   }
 
   _initSchema() {
@@ -843,6 +844,71 @@ class AuthStore {
       CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
     `);
     this._migrateSkinsTable();
+  }
+
+  // Uma linha por (jogador, servidor). Agregado: nada de log por sessão.
+  _initPlaytimeSchema() {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS playtime (
+        playerId      INTEGER NOT NULL,
+        serverId      TEXT    NOT NULL,
+        serverName    TEXT,
+        totalSeconds  INTEGER NOT NULL DEFAULT 0,
+        sessions      INTEGER NOT NULL DEFAULT 0,
+        firstPlayedAt INTEGER NOT NULL,
+        lastPlayedAt  INTEGER NOT NULL,
+        PRIMARY KEY (playerId, serverId),
+        FOREIGN KEY (playerId) REFERENCES accounts(playerId) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_playtime_server ON playtime(serverId);
+    `);
+
+    this._stmtPlaytimeUpsert = this.db.prepare(`
+      INSERT INTO playtime (playerId, serverId, serverName, totalSeconds, sessions, firstPlayedAt, lastPlayedAt)
+      SELECT ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (SELECT 1 FROM accounts WHERE playerId = ?)
+      ON CONFLICT(playerId, serverId) DO UPDATE SET
+        totalSeconds = totalSeconds + excluded.totalSeconds,
+        sessions     = sessions + excluded.sessions,
+        serverName   = COALESCE(excluded.serverName, serverName),
+        lastPlayedAt = excluded.lastPlayedAt
+    `);
+  }
+
+  /**
+   * entries: [{ accountId, seconds, newSession }] — já validados na rota.
+   * Uma transação só pro lote inteiro (rápido no SQLite).
+   */
+  addPlaytimeBatch(serverId, serverName, entries) {
+    const now = nowSeconds();
+    let applied = 0;
+
+    const tx = this.db.transaction(() => {
+      for (const e of entries) {
+        const r = this._stmtPlaytimeUpsert.run(
+          e.accountId, serverId, serverName || null,
+          e.seconds, e.newSession ? 1 : 0, now, now,
+          e.accountId,
+        );
+        applied += r.changes;
+      }
+    });
+
+    tx();
+    return applied;
+  }
+
+  getPlaytime(playerId) {
+    const servers = this.db
+      .prepare(
+        `SELECT serverId, serverName, totalSeconds, sessions, firstPlayedAt, lastPlayedAt
+         FROM playtime WHERE playerId = ?
+         ORDER BY totalSeconds DESC`,
+      )
+      .all(playerId);
+
+    const totalSeconds = servers.reduce((acc, s) => acc + s.totalSeconds, 0);
+    return { totalSeconds, servers };
   }
 
 _migrateSkinsTable() {
@@ -1350,855 +1416,6 @@ _migrateSkinsTable() {
     return result.changes;
   }
 }
-
-//#region Push e notificações
-// Formato em disco:
-// {
-//   "tokens": {
-//     "<fcmToken>": {
-//       playerId, deviceId, platform, model, utcOffsetMinutes, language,
-//       createdAt, updatedAt, lastSeenAt, lastRaidPushAt, lastReengagementAt,
-//       reengagementIndex, reengagementStreak
-//     }
-//   }
-// }
-class PushStore {
-  constructor(config, logger) {
-    this.logger = logger;
-    this.filePath =
-      config.pushStorePath || path.join(process.cwd(), "data", "push-tokens.json");
-
-    this.tokens = new Map();
-    this._dirty = false;
-    this._flushTimer = null;
-
-    this._load();
-
-    this._flushTimer = setInterval(() => this.flush(), 5000);
-    if (this._flushTimer.unref) this._flushTimer.unref();
-  }
-
-  _load() {
-    try {
-      if (!fs.existsSync(this.filePath)) {
-        this.logger.info(`[Push] Store vazio, será criado em ${this.filePath}`);
-        return;
-      }
-
-      const raw = JSON.parse(fs.readFileSync(this.filePath, "utf8"));
-      for (const [token, rec] of Object.entries(raw.tokens || {})) {
-        this.tokens.set(token, rec);
-      }
-
-      this.logger.info(`[Push] ${this.tokens.size} token(s) carregado(s).`);
-    } catch (e) {
-      this.logger.error(`[Push] Falha ao carregar store: ${e.message}`);
-    }
-  }
-
-  flush() {
-    if (!this._dirty) return;
-
-    try {
-      const dir = path.dirname(this.filePath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-      const out = { tokens: Object.fromEntries(this.tokens) };
-      const tmp = `${this.filePath}.tmp`;
-
-      // Escrita atômica: um SIGKILL no meio de um writeFile direto deixaria o
-      // arquivo truncado e todo mundo perderia as notificações.
-      fs.writeFileSync(tmp, JSON.stringify(out), "utf8");
-      fs.renameSync(tmp, this.filePath);
-
-      this._dirty = false;
-    } catch (e) {
-      this.logger.error(`[Push] Falha ao gravar store: ${e.message}`);
-    }
-  }
-
-  // ── Registro ──────────────────────────────────────────────────────────────
-
-  registerToken(playerId, info) {
-    const { fcmToken } = info;
-    if (!fcmToken) return null;
-
-    const agora = nowSeconds();
-    const existente = this.tokens.get(fcmToken);
-
-    const rec = {
-      playerId: Number(playerId),
-      deviceId: info.deviceId || existente?.deviceId || null,
-      platform: info.platform || existente?.platform || null,
-      model: info.model || existente?.model || null,
-      utcOffsetMinutes:
-        typeof info.utcOffsetMinutes === "number"
-          ? info.utcOffsetMinutes
-          : existente?.utcOffsetMinutes ?? 0,
-      language: info.language || existente?.language || "pt-BR",
-      createdAt: existente?.createdAt ?? agora,
-      updatedAt: agora,
-      lastSeenAt: agora,
-      lastRaidPushAt: existente?.lastRaidPushAt ?? 0,
-      lastReengagementAt: existente?.lastReengagementAt ?? 0,
-      reengagementIndex: existente?.reengagementIndex ?? 0,
-      reengagementStreak: 0,
-    };
-
-    this.tokens.set(fcmToken, rec);
-    this._dirty = true;
-    return rec;
-  }
-
-  removeToken(fcmToken) {
-    const removido = this.tokens.delete(fcmToken);
-    if (removido) this._dirty = true;
-    return removido;
-  }
-
-  removeTokensOfPlayer(playerId) {
-    let n = 0;
-    for (const [token, rec] of this.tokens) {
-      if (rec.playerId === Number(playerId)) {
-        this.tokens.delete(token);
-        n++;
-      }
-    }
-    if (n > 0) this._dirty = true;
-    return n;
-  }
-
-  // ── Consulta ──────────────────────────────────────────────────────────────
-
-  getTokensForPlayer(playerId) {
-    const alvo = Number(playerId);
-    const out = [];
-    for (const [token, rec] of this.tokens) {
-      if (rec.playerId === alvo) out.push({ token, ...rec });
-    }
-    return out;
-  }
-
-  /** @returns {Map<number, Array<{token:string}>>} playerId → tokens */
-  getTokensForPlayers(playerIds) {
-    const alvos = new Set(playerIds.map(Number));
-    const mapa = new Map();
-
-    for (const [token, rec] of this.tokens) {
-      if (!alvos.has(rec.playerId)) continue;
-      if (!mapa.has(rec.playerId)) mapa.set(rec.playerId, []);
-      mapa.get(rec.playerId).push({ token, ...rec });
-    }
-
-    return mapa;
-  }
-
-  // ── Atividade / cooldowns ─────────────────────────────────────────────────
-
-  /** Marca os players como ativos: reengajamento e raid alert usam isto. */
-  touchActivity(playerIds) {
-    const alvos = new Set(playerIds.map(Number));
-    const agora = nowSeconds();
-
-    for (const rec of this.tokens.values()) {
-      if (!alvos.has(rec.playerId)) continue;
-      rec.lastSeenAt = agora;
-      rec.reengagementStreak = 0;
-      this._dirty = true;
-    }
-  }
-
-  markRaidPush(fcmToken) {
-    const rec = this.tokens.get(fcmToken);
-    if (!rec) return;
-    rec.lastRaidPushAt = nowSeconds();
-    this._dirty = true;
-  }
-
-  markReengagement(fcmToken, novoIndice) {
-    const rec = this.tokens.get(fcmToken);
-    if (!rec) return;
-    rec.lastReengagementAt = nowSeconds();
-    rec.reengagementIndex = novoIndice;
-    rec.reengagementStreak = (rec.reengagementStreak || 0) + 1;
-    this._dirty = true;
-  }
-
-  listCandidatosReengajamento(opts) {
-    const {
-      inatividadeMinHoras = 24,
-      inatividadeMaxDias = 30,
-      cooldownHoras = 48,
-      horaLocalMin = 11,
-      horaLocalMax = 21,
-      maxSemRetorno = 4,
-    } = opts || {};
-
-    const agora = nowSeconds();
-    const out = [];
-    const jaIncluidos = new Set(); // 1 push por player, não por aparelho
-
-    for (const [token, rec] of this.tokens) {
-      if (jaIncluidos.has(rec.playerId)) continue;
-
-      const inativoHa = (agora - (rec.lastSeenAt || 0)) / 3600;
-      if (inativoHa < inatividadeMinHoras) continue;
-      if (inativoHa > inatividadeMaxDias * 24) continue;
-
-      const desdeUltimo = (agora - (rec.lastReengagementAt || 0)) / 3600;
-      if (desdeUltimo < cooldownHoras) continue;
-
-      if ((rec.reengagementStreak || 0) >= maxSemRetorno) continue;
-
-      const horaLocal = new Date(
-        (agora + (rec.utcOffsetMinutes || 0) * 60) * 1000,
-      ).getUTCHours();
-
-      if (horaLocal < horaLocalMin || horaLocal > horaLocalMax) continue;
-
-      jaIncluidos.add(rec.playerId);
-      out.push({ token, ...rec });
-    }
-
-    return out;
-  }
-
-  getStats() {
-    const porPlataforma = {};
-    for (const rec of this.tokens.values()) {
-      const p = rec.platform || "?";
-      porPlataforma[p] = (porPlataforma[p] || 0) + 1;
-    }
-
-    return {
-      tokens: this.tokens.size,
-      players: new Set([...this.tokens.values()].map((r) => r.playerId)).size,
-      porPlataforma,
-    };
-  }
-}
-
-const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
-
-class FcmSender {
-  constructor(config, logger) {
-    this.logger = logger;
-    const fcm = config.fcm || {};
-
-    this.projectId = fcm.projectId || null;
-    this.serviceAccountPath = fcm.serviceAccountPath || null;
-    this.dryRun = Boolean(fcm.dryRun);
-    this.concurrency = fcm.concurrency || 10;
-
-    this.enabled = Boolean(this.projectId && this.serviceAccountPath);
-
-    if (!this.enabled) {
-      logger.warn(
-        "[FCM] projectId/serviceAccountPath ausentes — push DESATIVADO (modo log-only).",
-      );
-      return;
-    }
-
-    this._auth = new GoogleAuth({
-      keyFile: this.serviceAccountPath,
-      scopes: [FCM_SCOPE],
-    });
-
-    this._client = null;
-    this._endpoint = `https://fcm.googleapis.com/v1/projects/${this.projectId}/messages:send`;
-  }
-
-  async _getClient() {
-    if (!this._client) {
-      this._client = await this._auth.getClient();
-    }
-    return this._client;
-  }
-
-  _montarMensagem(token, payload) {
-    const data = {};
-    for (const [k, v] of Object.entries(payload.data || {})) {
-      data[k] = String(v); // FCM v1 exige data como <string, string>
-    }
-
-    return {
-      message: {
-        token,
-        data,
-        android: {
-          priority: payload.priority === "normal" ? "NORMAL" : "HIGH",
-          collapse_key: payload.collapseKey || undefined,
-          ttl: payload.ttlSeconds ? `${payload.ttlSeconds}s` : undefined,
-          notification: {
-            title: payload.title,
-            body: payload.body,
-            channel_id: payload.channelId || "geral",
-            tag: payload.tag || undefined,
-            sound: "default",
-            notification_priority:
-              payload.priority === "normal" ? "PRIORITY_DEFAULT" : "PRIORITY_HIGH",
-          },
-        },
-        apns: {
-          headers: {
-            "apns-priority": payload.priority === "normal" ? "5" : "10",
-            "apns-collapse-id": payload.collapseKey || undefined,
-          },
-          payload: {
-            aps: {
-              alert: { title: payload.title, body: payload.body },
-              sound: "default",
-            },
-          },
-        },
-      },
-    };
-  }
-
-  async sendToToken(token, payload) {
-    if (!this.enabled) {
-      this.logger.warn(`[FCM] (log-only) DESCARTADO :: ${payload.title}`);
-      return { token, ok: false, invalid: false, error: "FCM_DISABLED" };
-    }
-
-    try {
-      const client = await this._getClient();
-      const body = this._montarMensagem(token, payload);
-
-      if (this.dryRun) body.validate_only = true;
-
-      await client.request({
-        url: this._endpoint,
-        method: "POST",
-        data: body,
-      });
-
-      return { token, ok: true, invalid: false };
-    } catch (err) {
-      const status = err?.response?.status;
-      const fcmError =
-        err?.response?.data?.error?.details?.[0]?.errorCode ||
-        err?.response?.data?.error?.status ||
-        err.message;
-
-      const invalid =
-        status === 404 ||
-        fcmError === "UNREGISTERED" ||
-        fcmError === "INVALID_ARGUMENT" ||
-        fcmError === "NOT_FOUND";
-
-      if (!invalid) {
-        this.logger.warn(`[FCM] Falha (${status}): ${fcmError}`);
-      }
-
-      return { token, ok: false, invalid, error: String(fcmError) };
-    }
-  }
-
-  async sendToTokens(tokens, payload) {
-    const resultados = [];
-    const fila = [...new Set(tokens)];
-    const limite = Math.max(1, this.concurrency);
-
-    while (fila.length > 0) {
-      const lote = fila.splice(0, limite);
-      const parciais = await Promise.all(
-        lote.map((t) => this.sendToToken(t, payload)),
-      );
-      resultados.push(...parciais);
-    }
-
-    return resultados;
-  }
-}
-
-const MENSAGENS_REENGAJAMENTO = [
-  // Competitivas e provocativas
-  {
-    title: "Vão ficar com seu loot?",
-    body: "Enquanto você está fora, alguém está ficando mais forte. Vai deixar?"
-  },
-  {
-    title: "Estão passando você",
-    body: "A ilha não espera. Entre, evolua e volte para a disputa."
-  },
-  {
-    title: "Seu rival agradece",
-    body: "Cada dia longe é mais recurso para quem continua jogando."
-  },
-  {
-    title: "A ilha ficou competitiva",
-    body: "Tem jogador crescendo rápido por aí. Hora de responder."
-  },
-  {
-    title: "Vai entregar o território?",
-    body: "Espaço vazio sempre encontra um novo dono."
-  },
-  {
-    title: "Você ficou para trás?",
-    body: "Só existe um jeito de descobrir. Entre e confira."
-  },
-  {
-    title: "A concorrência não dorme",
-    body: "Mas tudo bem. Você ainda pode estragar o dia deles."
-  },
-  {
-    title: "Seu lugar está em jogo",
-    body: "Volte antes que alguém decida ocupar."
-  },
-  {
-    title: "O servidor seguiu em frente",
-    body: "Agora é sua vez de alcançar — ou ultrapassar — todo mundo."
-  },
-  {
-    title: "Hora da revanche",
-    body: "Você ainda tem contas para acertar nessa ilha."
-  },
-
-  // Humoradas e provocativas
-  {
-    title: "Seu machado sente saudades",
-    body: "Ele anda dizendo que você não corta mais como antigamente."
-  },
-  {
-    title: "As árvores estão tranquilas",
-    body: "Até demais. Entre e resolva esse problema."
-  },
-  {
-    title: "O loot não vem sozinho",
-    body: "Já tentamos conversar com ele. Não funcionou."
-  },
-  {
-    title: "Sua base pediu ajuda",
-    body: "Ela não falou nada, mas o silêncio foi preocupante."
-  },
-  {
-    title: "Você abandonou a ilha?",
-    body: "Porque ela definitivamente não abandonou seus recursos."
-  },
-  {
-    title: "Cinco minutinhos",
-    body: "É assim que começa. Depois você percebe que construiu uma fortaleza."
-  },
-  {
-    title: "Más notícias",
-    body: "Os outros jogadores também aprenderam a coletar recursos."
-  },
-  {
-    title: "Seu inventário está leve",
-    body: "Uma situação triste, porém totalmente reversível."
-  },
-  {
-    title: "Diagnóstico: pouco loot",
-    body: "Tratamento recomendado: entrar no servidor imediatamente."
-  },
-  {
-    title: "A ilha está suspeita",
-    body: "Calma demais. Melhor entrar e causar um pouco."
-  },
-
-  // Importância e urgência leve
-  {
-    title: "Muita coisa pode mudar",
-    body: "Alguns dias fazem diferença em um servidor de sobrevivência."
-  },
-  {
-    title: "Proteja seu progresso",
-    body: "Entre para revisar seus recursos, equipamentos e próximos passos."
-  },
-  {
-    title: "Não perca o ritmo",
-    body: "Uma visita rápida pode manter você perto dos jogadores mais fortes."
-  },
-  {
-    title: "Seu próximo avanço começa agora",
-    body: "Colete, melhore sua base e prepare-se para o que vier."
-  },
-  {
-    title: "A disputa continua",
-    body: "Volte para acompanhar o servidor e planejar sua próxima jogada."
-  },
-  {
-    title: "Hora de conferir a base",
-    body: "Veja o que falta e deixe tudo pronto para sua próxima batalha."
-  },
-  {
-    title: "Seu progresso importa",
-    body: "Entre, organize seus recursos e continue evoluindo."
-  },
-  {
-    title: "Não deixe a vantagem escapar",
-    body: "Alguns minutos hoje podem fazer diferença na próxima disputa."
-  },
-
-  // Descontraídas
-  {
-    title: "Dá uma passada na ilha",
-    body: "Sem compromisso. Só você, alguns recursos e possíveis confusões."
-  },
-  {
-    title: "Bora buscar loot?",
-    body: "Uma coleta rápida nunca fez mal. Quase nunca."
-  },
-  {
-    title: "Tem espaço na mochila",
-    body: "E isso é praticamente um convite para entrar."
-  },
-  {
-    title: "A base ainda está lá",
-    body: "Provavelmente. Melhor dar uma olhada."
-  },
-  {
-    title: "Partiu sobrevivência?",
-    body: "Entre, pegue recursos e tente não virar recurso de alguém."
-  },
-  {
-    title: "Só uma voltinha",
-    body: "Confira a base, colete alguma coisa e provoque os vizinhos."
-  },
-  {
-    title: "A ilha chamou",
-    body: "Ela quer saber quando você vai voltar a causar problemas."
-  },
-  {
-    title: "Hora de fazer barulho",
-    body: "O servidor está calmo demais sem você."
-  },
-
-  // Foco direto na competição entre jogadores
-  {
-    title: "Quem manda nessa ilha?",
-    body: "Entre e lembre os outros jogadores."
-  },
-  {
-    title: "Eles estão ficando confiantes",
-    body: "Talvez confiantes demais. Faça uma visita."
-  },
-  {
-    title: "Tem gente querendo seu lugar",
-    body: "Mostre que ele ainda tem dono."
-  },
-  {
-    title: "Suba no ranking da sobrevivência",
-    body: "Mais recursos, mais poder e menos espaço para os rivais."
-  },
-  {
-    title: "Construa. Domine. Repita.",
-    body: "Sua próxima disputa já pode começar."
-  },
-  {
-    title: "Não facilite para eles",
-    body: "Volte, evolua e obrigue seus rivais a trabalharem mais."
-  },
-  {
-    title: "A ilha precisa de um problema",
-    body: "Entre e seja esse problema."
-  },
-  {
-    title: "O topo não fica vazio",
-    body: "Ou você volta para disputar, ou alguém ocupa."
-  },
-  {
-    title: "Seus rivais ganharam folga",
-    body: "Já está na hora de acabar com isso."
-  },
-  {
-    title: "Volte para a briga",
-    body: "Recursos esperando, território disputado e rivais confortáveis demais."
-  }
-];
-
-function registrarRotasPush(app, deps) {
-  const {
-    config,
-    logger,
-    pushStore,
-    fcm,
-    jwtAuth,
-    serverAuth,
-    isPlayerOnline,
-    rateLimiter,
-  } = deps;
-
-  const raidCooldownSegundos = config.push?.raidCooldownSeconds ?? 300;
-  const limiter = rateLimiter ? rateLimiter.middleware() : (req, res, next) => next();
-
-  // ── Cliente ───────────────────────────────────────────────────────────────
-
-  app.post("/push/register", jwtAuth, limiter, (req, res) => {
-    const { fcmToken, deviceId, platform, model, utcOffsetMinutes, language } = req.body;
-
-    if (!fcmToken || typeof fcmToken !== "string" || fcmToken.length < 20) {
-      return res.status(400).json({ ok: false, error: "Invalid fcmToken" });
-    }
-
-    const rec = pushStore.registerToken(req.playerId, {
-      fcmToken,
-      deviceId: deviceId || req.headers["x-device-id"] || null,
-      platform,
-      model,
-      utcOffsetMinutes,
-      language,
-    });
-
-    logger.info(
-      `[Push] Token registrado: player=${req.playerId} platform=${rec.platform} model=${rec.model}`,
-    );
-
-    res.json({ ok: true });
-  });
-
-  app.post("/push/unregister", jwtAuth, (req, res) => {
-    const { fcmToken } = req.body;
-
-    if (fcmToken) {
-      pushStore.removeToken(fcmToken);
-    } else {
-      pushStore.removeTokensOfPlayer(req.playerId);
-    }
-
-    logger.info(`[Push] Token removido: player=${req.playerId}`);
-    res.json({ ok: true });
-  });
-
-  // ── Servidor de jogo ──────────────────────────────────────────────────────
-
-  app.post("/push/activity", serverAuth, (req, res) => {
-    const { playerIds } = req.body;
-
-    if (!Array.isArray(playerIds)) {
-      return res.status(400).json({ ok: false, error: "playerIds must be an array" });
-    }
-
-    pushStore.touchActivity(playerIds);
-    res.json({ ok: true });
-  });
-
-  app.post("/push/raid-alert", serverAuth, async (req, res) => {
-    const {
-      serverId,
-      serverName,
-      playerIds,
-      donoNome,
-      atacanteNome,
-      pecasAtingidas,
-      algumaDestruida,
-      posX,
-      posY,
-      posZ,
-    } = req.body;
-
-    if (!Array.isArray(playerIds) || playerIds.length === 0) {
-      return res.status(400).json({ ok: false, error: "playerIds must be a non-empty array" });
-    }
-
-    if (playerIds.length > 64) {
-      return res.status(400).json({ ok: false, error: "Too many playerIds" });
-    }
-
-    const agora = nowSeconds();
-    const mapa = pushStore.getTokensForPlayers(playerIds);
-
-    let enviados = 0;
-    let semToken = 0;
-    let emCooldown = 0;
-    let ignoradosOnline = 0;
-
-    const payload = montarPayloadRaid({
-      serverName,
-      donoNome,
-      atacanteNome,
-      pecasAtingidas,
-      algumaDestruida,
-      serverId,
-      posX,
-      posY,
-      posZ,
-    });
-
-    const tokensParaEnviar = [];
-
-    for (const playerId of playerIds) {
-      // O jogador pode estar fora do servidor de jogo mas com o app aberto no
-      // menu/chat. Nesse caso o cliente já mostra o alerta in-app.
-      if (typeof isPlayerOnline === "function" && isPlayerOnline(playerId)) {
-        ignoradosOnline++;
-        continue;
-      }
-
-      const tokens = mapa.get(Number(playerId));
-      if (!tokens || tokens.length === 0) {
-        semToken++;
-        continue;
-      }
-
-      let algumPassou = false;
-      for (const t of tokens) {
-        if (agora - (t.lastRaidPushAt || 0) < raidCooldownSegundos) {
-          continue;
-        }
-        tokensParaEnviar.push(t.token);
-        algumPassou = true;
-      }
-
-      if (!algumPassou) emCooldown++;
-    }
-
-    if (tokensParaEnviar.length === 0) {
-      return res.json({ ok: true, enviados: 0, semToken, emCooldown });
-    }
-
-    const resultados = await fcm.sendToTokens(tokensParaEnviar, payload);
-
-    for (const r of resultados) {
-      if (r.ok) {
-        enviados++;
-        pushStore.markRaidPush(r.token);
-      } else {
-        logger.warn(
-          `[Push] Falha no token ${String(r.token).slice(0, 12)}...: ` +
-            `${r.error} (invalid=${!!r.invalid})`
-        );
-        if (r.invalid) pushStore.removeToken(r.token);
-      }
-    }
-
-    logger.info(
-      `[Push] Raid alert '${serverName || serverId}': ${enviados} enviado(s), ` +
-        `${semToken} sem token, ${emCooldown} em cooldown, ${ignoradosOnline} online.`,
-    );
-
-    res.json({ ok: true, enviados, semToken, emCooldown });
-  });
-
-  app.get("/push/stats", serverAuth, (req, res) => {
-    res.json({ ok: true, ...pushStore.getStats() });
-  });
-}
-
-function montarPayloadRaid(info) {
-  const {
-    serverName,
-    donoNome,
-    atacanteNome,
-    pecasAtingidas,
-    algumaDestruida,
-    serverId,
-    posX,
-    posY,
-    posZ,
-  } = info;
-
-  const quem = atacanteNome ? atacanteNome : "Alguém";
-  const alvo = donoNome ? `base de ${donoNome}` : "sua base";
-
-  const title = algumaDestruida ? "⚠️ Sua base está caindo" : "⚠️ Sua base está sob ataque";
-
-  let body;
-  if (algumaDestruida) {
-    body = `${quem} destruiu estruturas na ${alvo}.`;
-  } else if (pecasAtingidas > 1) {
-    body = `${quem} está atacando ${alvo} (${pecasAtingidas} estruturas atingidas).`;
-  } else {
-    body = `${quem} está atacando ${alvo}.`;
-  }
-
-  if (serverName) body += ` — ${serverName}`;
-
-  return {
-    title,
-    body,
-    channelId: "raid_alerts",
-    priority: "high",
-    // Mesma collapseKey = a notificação nova SUBSTITUI a anterior na bandeja,
-    // em vez de empilhar 5 avisos do mesmo raid.
-    collapseKey: `raid_${serverId || "srv"}`,
-    tag: `raid_${serverId || "srv"}`,
-    ttlSeconds: 900, // 15 min: alerta de raid velho não serve pra nada
-    data: {
-      tipo: "raid",
-      serverId: serverId || "",
-      posX: posX ?? 0,
-      posY: posY ?? 0,
-      posZ: posZ ?? 0,
-      atacante: atacanteNome || "",
-    },
-  };
-}
-
-function iniciarJobsDePush(deps) {
-  const { config, logger, pushStore, fcm } = deps;
-
-  const opts = {
-    intervaloMinutos: config.push?.reengagementIntervalMinutes ?? 60,
-    maxPorRodada: config.push?.reengagementMaxPerRun ?? 200,
-    inatividadeMinHoras: config.push?.reengagementInactiveHours ?? 24,
-    inatividadeMaxDias: config.push?.reengagementMaxInactiveDays ?? 30,
-    cooldownHoras: config.push?.reengagementCooldownHours ?? 48,
-    horaLocalMin: config.push?.quietHoursEnd ?? 11,
-    horaLocalMax: config.push?.quietHoursStart ?? 21,
-    maxSemRetorno: config.push?.reengagementMaxStreak ?? 4,
-    habilitado: config.push?.reengagementEnabled !== false,
-  };
-
-  if (!opts.habilitado) {
-    logger.info("[Push] Reengajamento desabilitado por config.");
-    return;
-  }
-
-  const rodar = async () => {
-    try {
-      const candidatos = pushStore
-        .listCandidatosReengajamento(opts)
-        .slice(0, opts.maxPorRodada);
-
-      if (candidatos.length === 0) return;
-
-      let enviados = 0;
-
-      for (const c of candidatos) {
-        const idx = (c.reengagementIndex || 0) % MENSAGENS_REENGAJAMENTO.length;
-        const msg = MENSAGENS_REENGAJAMENTO[idx];
-
-        const r = await fcm.sendToToken(c.token, {
-          title: msg.title,
-          body: msg.body,
-          channelId: "novidades",
-          priority: "normal",
-          collapseKey: "reengajamento",
-          tag: "reengajamento",
-          ttlSeconds: 12 * 3600,
-          data: { tipo: "reengajamento" },
-        });
-
-        if (r.ok) {
-          pushStore.markReengagement(c.token, idx + 1);
-          enviados++;
-        } else if (r.invalid) {
-          pushStore.removeToken(r.token);
-        }
-      }
-
-      pushStore.flush();
-      logger.info(
-        `[Push] Reengajamento: ${enviados}/${candidatos.length} enviado(s).`,
-      );
-    } catch (e) {
-      logger.error(`[Push] Job de reengajamento falhou: ${e.message}`);
-    }
-  };
-
-  const intervalo = Math.max(5, opts.intervaloMinutos) * 60 * 1000;
-  const timer = setInterval(rodar, intervalo);
-  if (timer.unref) timer.unref();
-
-  logger.info(
-    `[Push] Job de reengajamento ativo (a cada ${opts.intervaloMinutos} min, ` +
-      `inativos > ${opts.inatividadeMinHoras}h, janela local ${opts.horaLocalMin}h–${opts.horaLocalMax}h).`,
-  );
-}
-//#endregion
-
 // ===== LOAD CONFIG =====
 let config;
 try {
@@ -2213,10 +1430,7 @@ const store = new DataStore(config);
 const authStore = new AuthStore(config, logger);
 const banStore = new BanStore(config, logger);
 const rateLimiter = new RateLimiter(config, logger);
-const pushStore = new PushStore(config, logger);
-const fcm = new FcmSender(config, logger);
 const app = express();
-const chatClients = new Map();
 const shopStore = new ShopStore(authStore.db, config, logger);
 const googleShop = new GoogleShopStore(authStore.db, config, logger);
 const skinCatalog = new SkinCatalogStore(config, logger);
@@ -2532,22 +1746,31 @@ app.post("/join", rateLimiter.middleware(), (req, res) => {
     });
   }
 
+  // Sessão opcional: liga o join à conta para o relatório ("jogaram partida").
+  // Sem os headers o join continua funcionando como antes.
+  let accountId = null;
+  const authHeader = req.headers["authorization"];
+  const deviceIdHdr = req.headers["x-device-id"];
+  if (authHeader && authHeader.startsWith("Bearer ") && deviceIdHdr) {
+    const v = authStore.validateSession(authHeader.substring(7), deviceIdHdr);
+    if (v.valid) accountId = v.playerId;
+  }
+
   const playerId = generateGuid();
   const joinToken = generateJoinToken();
   const expiresAt = now + config.tokenTTLSeconds;
 
-  const tokenData = {
+  store.createJoinToken({
     joinToken,
     serverId,
     playerId,
+    accountId,
     playerName,
     clientBuildVersion,
     expiresAt,
-  };
-
-  store.createJoinToken(tokenData);
+  });
   logger.info(
-    `Join token issued: ${playerName} -> ${server.name} (expires in ${config.tokenTTLSeconds}s)`,
+    `Join token issued: ${playerName}${accountId ? ` (${accountId})` : ""} -> ${server.name} (expires in ${config.tokenTTLSeconds}s)`,
   );
 
   res.json({
@@ -2589,17 +1812,28 @@ app.post("/join/validate", serverAuth, (req, res) => {
       ok: true,
       valid: false,
       reason: result.reason,
+      accountId: 0,
     });
   }
 
+  // o jogador realmente entrou no servidor: marca "jogou partida" no dia
+  if (result.accountId) authStore.registrarPartidaDiaria?.(result.accountId);
+
+  if (!result.accountId) {
+    logger.warn(
+      `[VALIDATE] ${result.playerName} entrou SEM conta vinculada — o /join chegou sem Authorization/X-Device-Id (tempo de jogo não será contado).`,
+    );
+  }
+
   logger.info(
-    `[VALIDATE] ✓ Token validated: ${result.playerName} joined server ${serverId}`,
+    `[VALIDATE] ✓ Token validated: ${result.playerName}${result.accountId ? ` (${result.accountId})` : ""} joined server ${serverId}`,
   );
 
   res.json({
     ok: true,
     valid: true,
     playerId: playerId,
+    accountId: result.accountId || 0, // nunca null: JsonUtility não lida bem com null em int
     clientBuildVersion: result.clientBuildVersion,
   });
 });
@@ -2979,23 +2213,69 @@ app.post("/stats/xp", serverAuth, (req, res) => {
   }
 });
 
-app.post("/players/online-status", jwtAuth, (req, res) => {
-  const { playerIds } = req.body;
+// Intervalo de flush do game server é 60s. Aceitamos folga pra retry/atraso,
+// mas nunca mais que isso: impede um servidor bugado/malicioso de inflar horas.
+const PLAYTIME_MAX_SECONDS_PER_REPORT = 180;
+const PLAYTIME_MAX_ENTRIES = 500;
 
-  if (!Array.isArray(playerIds) || playerIds.length === 0) {
-    return res.status(400).json({ ok: false, error: "playerIds must be a non-empty array" });
+app.post("/playtime/report", serverAuth, (req, res) => {
+  const { serverId, entries } = req.body;
+
+  const validation = validateRequired(["serverId", "entries"], req.body);
+  if (validation) return res.status(400).json({ ok: false, error: validation });
+
+  if (!Array.isArray(entries) || entries.length > PLAYTIME_MAX_ENTRIES) {
+    return res.status(400).json({ ok: false, error: `entries must be an array (max ${PLAYTIME_MAX_ENTRIES})` });
   }
 
-  if (playerIds.length > 100) {
-    return res.status(400).json({ ok: false, error: "Too many playerIds" });
+  const server = store.getServer(serverId);
+  if (!server) return res.status(404).json({ ok: false, error: "Server not found" });
+
+  const clean = [];
+  for (const e of entries) {
+    if (!e || !Number.isInteger(e.accountId) || e.accountId <= 0) continue;
+    if (!Number.isInteger(e.seconds) || e.seconds <= 0) continue;
+    clean.push({
+      accountId: e.accountId,
+      seconds: Math.min(e.seconds, PLAYTIME_MAX_SECONDS_PER_REPORT),
+      newSession: e.newSession === true,
+    });
   }
 
-  const result = {};
-  for (const id of playerIds) {
-    result[id] = chatClients.has(id);
-  }
+  if (clean.length === 0) return res.json({ ok: true, applied: 0 });
 
-  res.json({ ok: true, onlineStatus: result });
+  try {
+    const applied = authStore.addPlaytimeBatch(serverId, server.name, clean);
+    logger.debug(`[Playtime] ${serverId}: ${applied}/${clean.length} entradas aplicadas`);
+    res.json({ ok: true, applied });
+  } catch (error) {
+    logger.error("Playtime report error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+// Cliente consulta o próprio tempo de jogo
+app.get("/auth/playtime", jwtAuth, (req, res) => {
+  try {
+    res.json({ ok: true, ...authStore.getPlaytime(req.playerId) });
+  } catch (error) {
+    logger.error("Get playtime error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+// Admin / game server consulta de qualquer jogador
+app.get("/players/:playerId/playtime", serverAuth, (req, res) => {
+  const playerId = parseInt(req.params.playerId, 10);
+  if (!Number.isInteger(playerId))
+    return res.status(400).json({ ok: false, error: "Invalid playerId" });
+
+  try {
+    res.json({ ok: true, playerId, ...authStore.getPlaytime(playerId) });
+  } catch (error) {
+    logger.error("Get playtime (server) error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
 });
 //#endregion
 
@@ -3100,27 +2380,865 @@ app.get("/players/:playerId/equipped", serverAuth, (req, res) => {
 });
 //#endregion
 
+//#region Push e notificações
+// Formato em disco:
+// {
+//   "tokens": {
+//     "<fcmToken>": {
+//       playerId, deviceId, platform, model, utcOffsetMinutes, language,
+//       createdAt, updatedAt, lastSeenAt, lastRaidPushAt, lastReengagementAt,
+//       reengagementIndex, reengagementStreak
+//     }
+//   }
+// }
+class PushStore {
+  constructor(config, logger) {
+    this.logger = logger;
+    this.filePath =
+      config.pushStorePath || path.join(process.cwd(), "data", "push-tokens.json");
+
+    this.tokens = new Map();
+    this._dirty = false;
+    this._flushTimer = null;
+
+    this._load();
+
+    this._flushTimer = setInterval(() => this.flush(), 5000);
+    if (this._flushTimer.unref) this._flushTimer.unref();
+  }
+
+  _load() {
+    try {
+      if (!fs.existsSync(this.filePath)) {
+        this.logger.info(`[Push] Store vazio, será criado em ${this.filePath}`);
+        return;
+      }
+
+      const raw = JSON.parse(fs.readFileSync(this.filePath, "utf8"));
+      for (const [token, rec] of Object.entries(raw.tokens || {})) {
+        this.tokens.set(token, rec);
+      }
+
+      this.logger.info(`[Push] ${this.tokens.size} token(s) carregado(s).`);
+    } catch (e) {
+      this.logger.error(`[Push] Falha ao carregar store: ${e.message}`);
+    }
+  }
+
+  flush() {
+    if (!this._dirty) return;
+
+    try {
+      const dir = path.dirname(this.filePath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+      const out = { tokens: Object.fromEntries(this.tokens) };
+      const tmp = `${this.filePath}.tmp`;
+
+      // Escrita atômica: um SIGKILL no meio de um writeFile direto deixaria o
+      // arquivo truncado e todo mundo perderia as notificações.
+      fs.writeFileSync(tmp, JSON.stringify(out), "utf8");
+      fs.renameSync(tmp, this.filePath);
+
+      this._dirty = false;
+    } catch (e) {
+      this.logger.error(`[Push] Falha ao gravar store: ${e.message}`);
+    }
+  }
+
+  // ── Registro ──────────────────────────────────────────────────────────────
+
+  registerToken(playerId, info) {
+    const { fcmToken } = info;
+    if (!fcmToken) return null;
+
+    const agora = nowSeconds();
+    const existente = this.tokens.get(fcmToken);
+
+    const rec = {
+      playerId: Number(playerId),
+      deviceId: info.deviceId || existente?.deviceId || null,
+      platform: info.platform || existente?.platform || null,
+      model: info.model || existente?.model || null,
+      utcOffsetMinutes:
+        typeof info.utcOffsetMinutes === "number"
+          ? info.utcOffsetMinutes
+          : existente?.utcOffsetMinutes ?? 0,
+      language: info.language || existente?.language || "pt-BR",
+      createdAt: existente?.createdAt ?? agora,
+      updatedAt: agora,
+      lastSeenAt: agora,
+      lastRaidPushAt: existente?.lastRaidPushAt ?? 0,
+      lastReengagementAt: existente?.lastReengagementAt ?? 0,
+      reengagementIndex: existente?.reengagementIndex ?? 0,
+      reengagementStreak: 0,
+    };
+
+    this.tokens.set(fcmToken, rec);
+    this._dirty = true;
+    return rec;
+  }
+
+  removeToken(fcmToken) {
+    const removido = this.tokens.delete(fcmToken);
+    if (removido) this._dirty = true;
+    return removido;
+  }
+
+  removeTokensOfPlayer(playerId) {
+    let n = 0;
+    for (const [token, rec] of this.tokens) {
+      if (rec.playerId === Number(playerId)) {
+        this.tokens.delete(token);
+        n++;
+      }
+    }
+    if (n > 0) this._dirty = true;
+    return n;
+  }
+
+  // ── Consulta ──────────────────────────────────────────────────────────────
+
+  getTokensForPlayer(playerId) {
+    const alvo = Number(playerId);
+    const out = [];
+    for (const [token, rec] of this.tokens) {
+      if (rec.playerId === alvo) out.push({ token, ...rec });
+    }
+    return out;
+  }
+
+  /** @returns {Map<number, Array<{token:string}>>} playerId → tokens */
+  getTokensForPlayers(playerIds) {
+    const alvos = new Set(playerIds.map(Number));
+    const mapa = new Map();
+
+    for (const [token, rec] of this.tokens) {
+      if (!alvos.has(rec.playerId)) continue;
+      if (!mapa.has(rec.playerId)) mapa.set(rec.playerId, []);
+      mapa.get(rec.playerId).push({ token, ...rec });
+    }
+
+    return mapa;
+  }
+
+  // ── Atividade / cooldowns ─────────────────────────────────────────────────
+
+  /** Marca os players como ativos: reengajamento e raid alert usam isto. */
+  touchActivity(playerIds) {
+    const alvos = new Set(playerIds.map(Number));
+    const agora = nowSeconds();
+
+    for (const rec of this.tokens.values()) {
+      if (!alvos.has(rec.playerId)) continue;
+      rec.lastSeenAt = agora;
+      rec.reengagementStreak = 0;
+      this._dirty = true;
+    }
+  }
+
+  markRaidPush(fcmToken) {
+    const rec = this.tokens.get(fcmToken);
+    if (!rec) return;
+    rec.lastRaidPushAt = nowSeconds();
+    this._dirty = true;
+  }
+
+  markReengagement(fcmToken, novoIndice) {
+    const rec = this.tokens.get(fcmToken);
+    if (!rec) return;
+    rec.lastReengagementAt = nowSeconds();
+    rec.reengagementIndex = novoIndice;
+    rec.reengagementStreak = (rec.reengagementStreak || 0) + 1;
+    this._dirty = true;
+  }
+
+  listCandidatosReengajamento(opts) {
+    const {
+      inatividadeMinHoras = 24,
+      inatividadeMaxDias = 30,
+      cooldownHoras = 48,
+      horaLocalMin = 11,
+      horaLocalMax = 21,
+      maxSemRetorno = 4,
+    } = opts || {};
+
+    const agora = nowSeconds();
+    const out = [];
+    const jaIncluidos = new Set(); // 1 push por player, não por aparelho
+
+    for (const [token, rec] of this.tokens) {
+      if (jaIncluidos.has(rec.playerId)) continue;
+
+      const inativoHa = (agora - (rec.lastSeenAt || 0)) / 3600;
+      if (inativoHa < inatividadeMinHoras) continue;
+      if (inativoHa > inatividadeMaxDias * 24) continue;
+
+      const desdeUltimo = (agora - (rec.lastReengagementAt || 0)) / 3600;
+      if (desdeUltimo < cooldownHoras) continue;
+
+      if ((rec.reengagementStreak || 0) >= maxSemRetorno) continue;
+
+      const horaLocal = new Date(
+        (agora + (rec.utcOffsetMinutes || 0) * 60) * 1000,
+      ).getUTCHours();
+
+      if (horaLocal < horaLocalMin || horaLocal > horaLocalMax) continue;
+
+      jaIncluidos.add(rec.playerId);
+      out.push({ token, ...rec });
+    }
+
+    return out;
+  }
+
+  getStats() {
+    const porPlataforma = {};
+    for (const rec of this.tokens.values()) {
+      const p = rec.platform || "?";
+      porPlataforma[p] = (porPlataforma[p] || 0) + 1;
+    }
+
+    return {
+      tokens: this.tokens.size,
+      players: new Set([...this.tokens.values()].map((r) => r.playerId)).size,
+      porPlataforma,
+    };
+  }
+}
+
+const pushStore = new PushStore(config, logger);
+
+const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
+
+class FcmSender {
+  constructor(config, logger) {
+    this.logger = logger;
+    const fcm = config.fcm || {};
+
+    this.projectId = fcm.projectId || null;
+    this.serviceAccountPath = fcm.serviceAccountPath || null;
+    this.dryRun = Boolean(fcm.dryRun);
+    this.concurrency = fcm.concurrency || 10;
+
+    this.enabled = Boolean(this.projectId && this.serviceAccountPath);
+
+    if (!this.enabled) {
+      logger.warn(
+        "[FCM] projectId/serviceAccountPath ausentes — push DESATIVADO (modo log-only).",
+      );
+      return;
+    }
+
+    this._auth = new GoogleAuth({
+      keyFile: this.serviceAccountPath,
+      scopes: [FCM_SCOPE],
+    });
+
+    this._client = null;
+    this._endpoint = `https://fcm.googleapis.com/v1/projects/${this.projectId}/messages:send`;
+  }
+
+  async _getClient() {
+    if (!this._client) {
+      this._client = await this._auth.getClient();
+    }
+    return this._client;
+  }
+
+  _montarMensagem(token, payload) {
+    const data = {};
+    for (const [k, v] of Object.entries(payload.data || {})) {
+      data[k] = String(v); // FCM v1 exige data como <string, string>
+    }
+
+    return {
+      message: {
+        token,
+        data,
+        android: {
+          priority: payload.priority === "normal" ? "NORMAL" : "HIGH",
+          collapse_key: payload.collapseKey || undefined,
+          ttl: payload.ttlSeconds ? `${payload.ttlSeconds}s` : undefined,
+          notification: {
+            title: payload.title,
+            body: payload.body,
+            channel_id: payload.channelId || "geral",
+            tag: payload.tag || undefined,
+            sound: "default",
+            notification_priority:
+              payload.priority === "normal" ? "PRIORITY_DEFAULT" : "PRIORITY_HIGH",
+          },
+        },
+        apns: {
+          headers: {
+            "apns-priority": payload.priority === "normal" ? "5" : "10",
+            "apns-collapse-id": payload.collapseKey || undefined,
+          },
+          payload: {
+            aps: {
+              alert: { title: payload.title, body: payload.body },
+              sound: "default",
+            },
+          },
+        },
+      },
+    };
+  }
+
+  async sendToToken(token, payload) {
+    if (!this.enabled) {
+      this.logger.warn(`[FCM] (log-only) DESCARTADO :: ${payload.title}`);
+      return { token, ok: false, invalid: false, error: "FCM_DISABLED" };
+    }
+
+    try {
+      const client = await this._getClient();
+      const body = this._montarMensagem(token, payload);
+
+      if (this.dryRun) body.validate_only = true;
+
+      await client.request({
+        url: this._endpoint,
+        method: "POST",
+        data: body,
+      });
+
+      return { token, ok: true, invalid: false };
+    } catch (err) {
+      const status = err?.response?.status;
+      const fcmError =
+        err?.response?.data?.error?.details?.[0]?.errorCode ||
+        err?.response?.data?.error?.status ||
+        err.message;
+
+      const invalid =
+        status === 404 ||
+        fcmError === "UNREGISTERED" ||
+        fcmError === "INVALID_ARGUMENT" ||
+        fcmError === "NOT_FOUND";
+
+      if (!invalid) {
+        this.logger.warn(`[FCM] Falha (${status}): ${fcmError}`);
+      }
+
+      return { token, ok: false, invalid, error: String(fcmError) };
+    }
+  }
+
+  async sendToTokens(tokens, payload) {
+    const resultados = [];
+    const fila = [...new Set(tokens)];
+    const limite = Math.max(1, this.concurrency);
+
+    while (fila.length > 0) {
+      const lote = fila.splice(0, limite);
+      const parciais = await Promise.all(
+        lote.map((t) => this.sendToToken(t, payload)),
+      );
+      resultados.push(...parciais);
+    }
+
+    return resultados;
+  }
+}
+
+const fcm = new FcmSender(config, logger);
+
+const MENSAGENS_REENGAJAMENTO = [
+  // Competitivas e provocativas
+  {
+    title: "Vão ficar com seu loot?",
+    body: "Enquanto você está fora, alguém está ficando mais forte. Vai deixar?"
+  },
+  {
+    title: "Estão passando você",
+    body: "A ilha não espera. Entre, evolua e volte para a disputa."
+  },
+  {
+    title: "Seu rival agradece",
+    body: "Cada dia longe é mais recurso para quem continua jogando."
+  },
+  {
+    title: "A ilha ficou competitiva",
+    body: "Tem jogador crescendo rápido por aí. Hora de responder."
+  },
+  {
+    title: "Vai entregar o território?",
+    body: "Espaço vazio sempre encontra um novo dono."
+  },
+  {
+    title: "Você ficou para trás?",
+    body: "Só existe um jeito de descobrir. Entre e confira."
+  },
+  {
+    title: "A concorrência não dorme",
+    body: "Mas tudo bem. Você ainda pode estragar o dia deles."
+  },
+  {
+    title: "Seu lugar está em jogo",
+    body: "Volte antes que alguém decida ocupar."
+  },
+  {
+    title: "O servidor seguiu em frente",
+    body: "Agora é sua vez de alcançar — ou ultrapassar — todo mundo."
+  },
+  {
+    title: "Hora da revanche",
+    body: "Você ainda tem contas para acertar nessa ilha."
+  },
+
+  // Humoradas e provocativas
+  {
+    title: "Seu machado sente saudades",
+    body: "Ele anda dizendo que você não corta mais como antigamente."
+  },
+  {
+    title: "As árvores estão tranquilas",
+    body: "Até demais. Entre e resolva esse problema."
+  },
+  {
+    title: "O loot não vem sozinho",
+    body: "Já tentamos conversar com ele. Não funcionou."
+  },
+  {
+    title: "Sua base pediu ajuda",
+    body: "Ela não falou nada, mas o silêncio foi preocupante."
+  },
+  {
+    title: "Você abandonou a ilha?",
+    body: "Porque ela definitivamente não abandonou seus recursos."
+  },
+  {
+    title: "Cinco minutinhos",
+    body: "É assim que começa. Depois você percebe que construiu uma fortaleza."
+  },
+  {
+    title: "Más notícias",
+    body: "Os outros jogadores também aprenderam a coletar recursos."
+  },
+  {
+    title: "Seu inventário está leve",
+    body: "Uma situação triste, porém totalmente reversível."
+  },
+  {
+    title: "Diagnóstico: pouco loot",
+    body: "Tratamento recomendado: entrar no servidor imediatamente."
+  },
+  {
+    title: "A ilha está suspeita",
+    body: "Calma demais. Melhor entrar e causar um pouco."
+  },
+
+  // Importância e urgência leve
+  {
+    title: "Muita coisa pode mudar",
+    body: "Alguns dias fazem diferença em um servidor de sobrevivência."
+  },
+  {
+    title: "Proteja seu progresso",
+    body: "Entre para revisar seus recursos, equipamentos e próximos passos."
+  },
+  {
+    title: "Não perca o ritmo",
+    body: "Uma visita rápida pode manter você perto dos jogadores mais fortes."
+  },
+  {
+    title: "Seu próximo avanço começa agora",
+    body: "Colete, melhore sua base e prepare-se para o que vier."
+  },
+  {
+    title: "A disputa continua",
+    body: "Volte para acompanhar o servidor e planejar sua próxima jogada."
+  },
+  {
+    title: "Hora de conferir a base",
+    body: "Veja o que falta e deixe tudo pronto para sua próxima batalha."
+  },
+  {
+    title: "Seu progresso importa",
+    body: "Entre, organize seus recursos e continue evoluindo."
+  },
+  {
+    title: "Não deixe a vantagem escapar",
+    body: "Alguns minutos hoje podem fazer diferença na próxima disputa."
+  },
+
+  // Descontraídas
+  {
+    title: "Dá uma passada na ilha",
+    body: "Sem compromisso. Só você, alguns recursos e possíveis confusões."
+  },
+  {
+    title: "Bora buscar loot?",
+    body: "Uma coleta rápida nunca fez mal. Quase nunca."
+  },
+  {
+    title: "Tem espaço na mochila",
+    body: "E isso é praticamente um convite para entrar."
+  },
+  {
+    title: "A base ainda está lá",
+    body: "Provavelmente. Melhor dar uma olhada."
+  },
+  {
+    title: "Partiu sobrevivência?",
+    body: "Entre, pegue recursos e tente não virar recurso de alguém."
+  },
+  {
+    title: "Só uma voltinha",
+    body: "Confira a base, colete alguma coisa e provoque os vizinhos."
+  },
+  {
+    title: "A ilha chamou",
+    body: "Ela quer saber quando você vai voltar a causar problemas."
+  },
+  {
+    title: "Hora de fazer barulho",
+    body: "O servidor está calmo demais sem você."
+  },
+
+  // Foco direto na competição entre jogadores
+  {
+    title: "Quem manda nessa ilha?",
+    body: "Entre e lembre os outros jogadores."
+  },
+  {
+    title: "Eles estão ficando confiantes",
+    body: "Talvez confiantes demais. Faça uma visita."
+  },
+  {
+    title: "Tem gente querendo seu lugar",
+    body: "Mostre que ele ainda tem dono."
+  },
+  {
+    title: "Suba no ranking da sobrevivência",
+    body: "Mais recursos, mais poder e menos espaço para os rivais."
+  },
+  {
+    title: "Construa. Domine. Repita.",
+    body: "Sua próxima disputa já pode começar."
+  },
+  {
+    title: "Não facilite para eles",
+    body: "Volte, evolua e obrigue seus rivais a trabalharem mais."
+  },
+  {
+    title: "A ilha precisa de um problema",
+    body: "Entre e seja esse problema."
+  },
+  {
+    title: "O topo não fica vazio",
+    body: "Ou você volta para disputar, ou alguém ocupa."
+  },
+  {
+    title: "Seus rivais ganharam folga",
+    body: "Já está na hora de acabar com isso."
+  },
+  {
+    title: "Volte para a briga",
+    body: "Recursos esperando, território disputado e rivais confortáveis demais."
+  }
+];
+
+function registrarRotasPush(app, deps) {
+  const {
+    config,
+    logger,
+    pushStore,
+    fcm,
+    jwtAuth,
+    serverAuth,
+    rateLimiter,
+  } = deps;
+
+  const raidCooldownSegundos = config.push?.raidCooldownSeconds ?? 300;
+  const limiter = rateLimiter ? rateLimiter.middleware() : (req, res, next) => next();
+
+  // ── Cliente ───────────────────────────────────────────────────────────────
+
+  app.post("/push/register", jwtAuth, limiter, (req, res) => {
+    const { fcmToken, deviceId, platform, model, utcOffsetMinutes, language } = req.body;
+
+    if (!fcmToken || typeof fcmToken !== "string" || fcmToken.length < 20) {
+      return res.status(400).json({ ok: false, error: "Invalid fcmToken" });
+    }
+
+    const rec = pushStore.registerToken(req.playerId, {
+      fcmToken,
+      deviceId: deviceId || req.headers["x-device-id"] || null,
+      platform,
+      model,
+      utcOffsetMinutes,
+      language,
+    });
+
+    logger.info(
+      `[Push] Token registrado: player=${req.playerId} platform=${rec.platform} model=${rec.model}`,
+    );
+
+    res.json({ ok: true });
+  });
+
+  app.post("/push/unregister", jwtAuth, (req, res) => {
+    const { fcmToken } = req.body;
+
+    if (fcmToken) {
+      pushStore.removeToken(fcmToken);
+    } else {
+      pushStore.removeTokensOfPlayer(req.playerId);
+    }
+
+    logger.info(`[Push] Token removido: player=${req.playerId}`);
+    res.json({ ok: true });
+  });
+
+  // ── Servidor de jogo ──────────────────────────────────────────────────────
+
+  app.post("/push/activity", serverAuth, (req, res) => {
+    const { playerIds } = req.body;
+
+    if (!Array.isArray(playerIds)) {
+      return res.status(400).json({ ok: false, error: "playerIds must be an array" });
+    }
+
+    pushStore.touchActivity(playerIds);
+    res.json({ ok: true });
+  });
+
+  app.post("/push/raid-alert", serverAuth, async (req, res) => {
+    const {
+      serverId,
+      serverName,
+      playerIds,
+      donoNome,
+      atacanteNome,
+      pecasAtingidas,
+      algumaDestruida,
+      posX,
+      posY,
+      posZ,
+    } = req.body;
+
+    if (!Array.isArray(playerIds) || playerIds.length === 0) {
+      return res.status(400).json({ ok: false, error: "playerIds must be a non-empty array" });
+    }
+
+    if (playerIds.length > 64) {
+      return res.status(400).json({ ok: false, error: "Too many playerIds" });
+    }
+
+    const agora = nowSeconds();
+    const mapa = pushStore.getTokensForPlayers(playerIds);
+
+    let enviados = 0;
+    let semToken = 0;
+    let emCooldown = 0;
+    let ignoradosOnline = 0;
+
+    const payload = montarPayloadRaid({
+      serverName,
+      donoNome,
+      atacanteNome,
+      pecasAtingidas,
+      algumaDestruida,
+      serverId,
+      posX,
+      posY,
+      posZ,
+    });
+
+    const tokensParaEnviar = [];
+
+    for (const playerId of playerIds) {
+      const tokens = mapa.get(Number(playerId));
+      if (!tokens || tokens.length === 0) {
+        semToken++;
+        continue;
+      }
+
+      let algumPassou = false;
+      for (const t of tokens) {
+        if (agora - (t.lastRaidPushAt || 0) < raidCooldownSegundos) {
+          continue;
+        }
+        tokensParaEnviar.push(t.token);
+        algumPassou = true;
+      }
+
+      if (!algumPassou) emCooldown++;
+    }
+
+    if (tokensParaEnviar.length === 0) {
+      return res.json({ ok: true, enviados: 0, semToken, emCooldown });
+    }
+
+    const resultados = await fcm.sendToTokens(tokensParaEnviar, payload);
+
+    for (const r of resultados) {
+      if (r.ok) {
+        enviados++;
+        pushStore.markRaidPush(r.token);
+      } else {
+        logger.warn(
+          `[Push] Falha no token ${String(r.token).slice(0, 12)}...: ` +
+            `${r.error} (invalid=${!!r.invalid})`
+        );
+        if (r.invalid) pushStore.removeToken(r.token);
+      }
+    }
+
+    logger.info(
+      `[Push] Raid alert '${serverName || serverId}': ${enviados} enviado(s), ` +
+        `${semToken} sem token, ${emCooldown} em cooldown, ${ignoradosOnline} online.`,
+    );
+
+    res.json({ ok: true, enviados, semToken, emCooldown });
+  });
+
+  app.get("/push/stats", serverAuth, (req, res) => {
+    res.json({ ok: true, ...pushStore.getStats() });
+  });
+}
+
+function montarPayloadRaid(info) {
+  const {
+    serverName,
+    donoNome,
+    atacanteNome,
+    pecasAtingidas,
+    algumaDestruida,
+    serverId,
+    posX,
+    posY,
+    posZ,
+  } = info;
+
+  const quem = atacanteNome ? atacanteNome : "Alguém";
+  const alvo = donoNome ? `base de ${donoNome}` : "sua base";
+
+  const title = algumaDestruida ? "⚠️ Sua base está caindo" : "⚠️ Sua base está sob ataque";
+
+  let body;
+  if (algumaDestruida) {
+    body = `${quem} destruiu estruturas na ${alvo}.`;
+  } else if (pecasAtingidas > 1) {
+    body = `${quem} está atacando ${alvo} (${pecasAtingidas} estruturas atingidas).`;
+  } else {
+    body = `${quem} está atacando ${alvo}.`;
+  }
+
+  if (serverName) body += ` — ${serverName}`;
+
+  return {
+    title,
+    body,
+    channelId: "raid_alerts",
+    priority: "high",
+    // Mesma collapseKey = a notificação nova SUBSTITUI a anterior na bandeja,
+    // em vez de empilhar 5 avisos do mesmo raid.
+    collapseKey: `raid_${serverId || "srv"}`,
+    tag: `raid_${serverId || "srv"}`,
+    ttlSeconds: 900, // 15 min: alerta de raid velho não serve pra nada
+    data: {
+      tipo: "raid",
+      serverId: serverId || "",
+      posX: posX ?? 0,
+      posY: posY ?? 0,
+      posZ: posZ ?? 0,
+      atacante: atacanteNome || "",
+    },
+  };
+}
+
+function iniciarJobsDePush(deps) {
+  const { config, logger, pushStore, fcm } = deps;
+
+  const opts = {
+    intervaloMinutos: config.push?.reengagementIntervalMinutes ?? 60,
+    maxPorRodada: config.push?.reengagementMaxPerRun ?? 200,
+    inatividadeMinHoras: config.push?.reengagementInactiveHours ?? 24,
+    inatividadeMaxDias: config.push?.reengagementMaxInactiveDays ?? 30,
+    cooldownHoras: config.push?.reengagementCooldownHours ?? 48,
+    horaLocalMin: config.push?.quietHoursEnd ?? 11,
+    horaLocalMax: config.push?.quietHoursStart ?? 21,
+    maxSemRetorno: config.push?.reengagementMaxStreak ?? 4,
+    habilitado: config.push?.reengagementEnabled !== false,
+  };
+
+  if (!opts.habilitado) {
+    logger.info("[Push] Reengajamento desabilitado por config.");
+    return;
+  }
+
+  const rodar = async () => {
+    try {
+      const candidatos = pushStore
+        .listCandidatosReengajamento(opts)
+        .slice(0, opts.maxPorRodada);
+
+      if (candidatos.length === 0) return;
+
+      let enviados = 0;
+
+      for (const c of candidatos) {
+        const idx = (c.reengagementIndex || 0) % MENSAGENS_REENGAJAMENTO.length;
+        const msg = MENSAGENS_REENGAJAMENTO[idx];
+
+        const r = await fcm.sendToToken(c.token, {
+          title: msg.title,
+          body: msg.body,
+          channelId: "novidades",
+          priority: "normal",
+          collapseKey: "reengajamento",
+          tag: "reengajamento",
+          ttlSeconds: 12 * 3600,
+          data: { tipo: "reengajamento" },
+        });
+
+        if (r.ok) {
+          pushStore.markReengagement(c.token, idx + 1);
+          enviados++;
+        } else if (r.invalid) {
+          pushStore.removeToken(r.token);
+        }
+      }
+
+      pushStore.flush();
+      logger.info(
+        `[Push] Reengajamento: ${enviados}/${candidatos.length} enviado(s).`,
+      );
+    } catch (e) {
+      logger.error(`[Push] Job de reengajamento falhou: ${e.message}`);
+    }
+  };
+
+  const intervalo = Math.max(5, opts.intervaloMinutos) * 60 * 1000;
+  const timer = setInterval(rodar, intervalo);
+  if (timer.unref) timer.unref();
+
+  logger.info(
+    `[Push] Job de reengajamento ativo (a cada ${opts.intervaloMinutos} min, ` +
+      `inativos > ${opts.inatividadeMinHoras}h, janela local ${opts.horaLocalMin}h–${opts.horaLocalMax}h).`,
+  );
+}
+//#endregion
+
 const playWatcher = new PlayWatcher({
   config,
   logger,
-  onNewVersion: ({ version, latestClientBuild, removidas }) => {
-    // avisa quem está no chat que saiu update
-    const payload = JSON.stringify({
-      type: "client_update_available",
-      version,
-      changelog: latestClientBuild.changelog,
-      forced: removidas.length > 0,
-    });
-    for (const [, c] of chatClients) {
-      if (c.ws.readyState === 1) c.ws.send(payload);
-    }
+  onNewVersion: ({ version, removidas }) => {
+    logger.info(`[Play] nova versão ${version}${removidas.length ? ` · builds removidas: ${removidas.join(", ")}` : ""}`);
   },
 });
 
+const rouletteStore = new RouletteStore(authStore.db, { logger, skinCatalog });
+registrarRotasRoleta(app, { logger, rouletteStore, jwtAuth, serverAuth, rateLimiter });
+
 registrarRotasAdmin(app, {
   config, logger, store, authStore, banStore, pushStore, fcm,
-  shopStore, googleShop, skinCatalog, chatClients, playWatcher,
-  rateLimiter, kickFromChat, onCredited,
+  shopStore, googleShop, skinCatalog, playWatcher,
+  rateLimiter, encerrarAcesso, onCredited,rouletteStore,
 });
 // ===== BACKGROUND JOBS =====
 function startBackgroundJobs() {
@@ -3159,16 +3277,9 @@ function startBackgroundJobs() {
 iniciarJobsDaLoja({ shopStore, logger });
 iniciarJobsGooglePlay({ googleShop, logger, onCredited });
 
-function kickFromChat(playerId, reason = "Você foi banido") {
+function encerrarAcesso(playerId) {
   pushStore.removeTokensOfPlayer(playerId);
-  const key = String(playerId);
-  if (chatClients.has(key) || chatClients.has(playerId)) {
-    const client = chatClients.get(key) || chatClients.get(playerId);
-    if (client && client.ws.readyState === 1) {
-      client.ws.send(JSON.stringify({ type: "banned", reason }));
-      setTimeout(() => client.ws.close(), 100);
-    }
-  }
+  authStore.db.prepare(`DELETE FROM sessions WHERE playerId = ?`).run(Number(playerId));
 }
 
 async function reconcileOrderNow(orderId, { shopStore, logger, onCredited }) {
@@ -3258,7 +3369,7 @@ Comandos disponíveis:
           if (!playerId) { console.log("Uso: ban <playerId> [motivo]"); break; }
           const reason = parts.slice(2).join(" ") || "Banido pelo admin";
           const rec = banStore.banPlayer(playerId, reason, "console");
-          kickFromChat(playerId, reason);
+          encerrarAcesso(playerId, reason);
           console.log(`✓ Player ${playerId} banido.`);
           console.log(`  Motivo: ${reason}`);
           console.log(`  Devices: ${rec.deviceIds.length} | Hardware: ${rec.hardwareIds.length} | IPs: ${rec.ips.length}`);
@@ -3401,115 +3512,8 @@ registrarRotasPush(app, {
   fcm,
   jwtAuth,
   serverAuth,
-  rateLimiter,
-  isPlayerOnline: (playerId) => {
-    if (config.push?.suprimirSeOnlineNoChat !== true) return false;
-    return chatClients.has(Number(playerId)) || chatClients.has(String(playerId));
-  },
+  rateLimiter
 });
-const wss = new WebSocketServer({ server: httpServer });
-
-wss.on("connection", (ws) => {
-  let registeredPlayerId = null;
-
-  ws.on("message", (raw) => {
-    let msg;
-    try {
-      msg = JSON.parse(raw);
-    } catch {
-      ws.send(JSON.stringify({ type: "error", error: "Invalid JSON" }));
-      return;
-    }
-
-    if (msg.type === "chat_join") {
-      const { token, deviceId, playerName } = msg;
-      if (!token || !deviceId || !playerName) {
-        ws.send(JSON.stringify({ type: "error", error: "Missing fields" }));
-        return;
-      }
-      const validation = authStore.validateSession(token, deviceId);
-      if (!validation.valid) {
-        ws.send(JSON.stringify({ type: "error", error: "Invalid session" }));
-        ws.close();
-        return;
-      }
-
-      registeredPlayerId = validation.playerId;
-
-      if (chatClients.has(registeredPlayerId)) {
-        const existingClient = chatClients.get(registeredPlayerId);
-        if (existingClient.ws.readyState === 1) {
-          existingClient.ws.send(JSON.stringify({
-            type:   "session_displaced",
-            reason: "Another device logged into your account",
-          }));
-        }
-        setTimeout(() => existingClient.ws.close(), 100);
-      }
-
-      chatClients.set(registeredPlayerId, { ws, playerName });
-      logger.info(`[Chat] Player joined: ${playerName} (${registeredPlayerId})`);
-
-      ws.send(JSON.stringify({ type: "chat_joined", onlineCount: chatClients.size }));
-      broadcastChatMeta();
-      return;
-    }
-
-    if (!registeredPlayerId) {
-      ws.send(JSON.stringify({ type: "error", error: "Not registered" }));
-      return;
-    }
-
-    if (msg.type === "chat_message") {
-      const text = (msg.text || "").trim();
-      if (!text || text.length === 0) return;
-      if (text.length > 200) {
-        ws.send(JSON.stringify({ type: "error", error: "Message too long" }));
-        return;
-      }
-
-      const client = chatClients.get(registeredPlayerId);
-      const payload = JSON.stringify({
-        type:       "chat_message",
-        playerId:   registeredPlayerId,
-        playerName: client.playerName,
-        text,
-        timestamp:  nowSeconds(),
-      });
-
-      console.log(`[Chat] ${client.playerName}: ${text}`);
-
-      for (const [, c] of chatClients) {
-        if (c.ws.readyState === 1)
-          c.ws.send(payload);
-      }
-    }
-  });
-
-  ws.on("close", () => {
-    if (registeredPlayerId && chatClients.has(registeredPlayerId)) {
-      const client = chatClients.get(registeredPlayerId);
-      logger.info(`[Chat] Player left: ${client.playerName}`);
-      chatClients.delete(registeredPlayerId);
-      broadcastChatMeta();
-    }
-  });
-
-  ws.on("error", (err) => {
-    logger.warn(`[WS] WebSocket error: ${err.message}`);
-  });
-});
-
-function broadcastChatMeta() {
-  const payload = JSON.stringify({
-    type:        "chat_meta",
-    onlineCount: chatClients.size,
-  });
-  for (const [, c] of chatClients) {
-    if (c.ws.readyState === 1)
-      c.ws.send(payload);
-  }
-}
 
 httpServer.listen(config.port, config.host, () => {
   logger.info("=".repeat(60));

@@ -48,22 +48,6 @@ function instalarBufferDeLogs(logger, max = 3000) {
       }
     };
   }
-
-  // Linhas do chat vão direto pro console.log; capturamos as que têm prefixo.
-  const consoleLog = console.log.bind(console);
-  console.log = (...args) => {
-    consoleLog(...args);
-    const first = typeof args[0] === "string" ? args[0] : "";
-    if (first.startsWith("[Chat]")) {
-      const entry = { seq: ++seq, ts: Date.now(), level: "chat", msg: args.map(fmtArg).join(" ") };
-      buffer.push(entry);
-      if (buffer.length > max) buffer.shift();
-      for (const fn of listeners) {
-        try { fn(entry); } catch { /* ignore */ }
-      }
-    }
-  };
-
   return { buffer, listeners };
 }
 
@@ -171,14 +155,25 @@ function instalarRastreioDeAtividade(db, authStore, relogio, logger) {
     CREATE TABLE IF NOT EXISTS player_daily_activity (
       playerId    INTEGER NOT NULL,
       day         TEXT    NOT NULL,
-      firstSeenAt INTEGER NOT NULL,           -- primeiro login do dia
-      lastSeenAt  INTEGER NOT NULL,           -- último login do dia
+      firstSeenAt INTEGER NOT NULL,           -- primeiro login/partida do dia
+      lastSeenAt  INTEGER NOT NULL,           -- último login/partida do dia
       logins      INTEGER NOT NULL DEFAULT 1, -- quantos logins no dia
-      played      INTEGER NOT NULL DEFAULT 0, -- 1 = game server reportou partida nesse dia
+      played      INTEGER NOT NULL DEFAULT 0, -- 1 = entrou em servidor de jogo nesse dia
       PRIMARY KEY (playerId, day)
     );
     CREATE INDEX IF NOT EXISTS idx_pda_day ON player_daily_activity(day);
     CREATE TABLE IF NOT EXISTS report_meta (k TEXT PRIMARY KEY, v TEXT);
+
+    -- tempo de jogo por jogador × servidor × dia local (1 linha/dia, leve)
+    CREATE TABLE IF NOT EXISTS player_server_daily (
+      playerId INTEGER NOT NULL,
+      serverId TEXT    NOT NULL,
+      day      TEXT    NOT NULL,
+      seconds  INTEGER NOT NULL DEFAULT 0,
+      sessions INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (playerId, serverId, day)
+    );
+    CREATE INDEX IF NOT EXISTS idx_psd_day ON player_server_daily(day);
   `);
 
   // migração da versão anterior (coluna "hits" → "logins")
@@ -189,6 +184,7 @@ function instalarRastreioDeAtividade(db, authStore, relogio, logger) {
 
   const vazia = db.prepare(`SELECT COUNT(*) c FROM player_daily_activity`).get().c === 0;
   db.prepare(`INSERT OR IGNORE INTO report_meta (k, v) VALUES ('activity_since', ?)`).run(relogio.dia());
+  db.prepare(`INSERT OR IGNORE INTO report_meta (k, v) VALUES ('playtime_since', ?)`).run(relogio.dia());
 
   const upsertLogin = db.prepare(`
     INSERT INTO player_daily_activity (playerId, day, firstSeenAt, lastSeenAt, logins, played)
@@ -197,10 +193,22 @@ function instalarRastreioDeAtividade(db, authStore, relogio, logger) {
       lastSeenAt = excluded.lastSeenAt,
       logins = logins + 1`);
 
-  // partida só marca o dia se o jogador já logou nele (não cria dia ativo sozinha)
-  const marcarPartida = db.prepare(`
-    UPDATE player_daily_activity SET played = 1
-    WHERE playerId = ? AND day = ? AND played = 0`);
+  // partida marca o dia mesmo sem login nele (ex.: logou 23:50, entrou na partida 00:05)
+  const upsertPartida = db.prepare(`
+    INSERT INTO player_daily_activity (playerId, day, firstSeenAt, lastSeenAt, logins, played)
+    VALUES (?, ?, ?, ?, 0, 1)
+    ON CONFLICT(playerId, day) DO UPDATE SET
+      played = 1,
+      lastSeenAt = MAX(lastSeenAt, excluded.lastSeenAt)`);
+
+  // só grava tempo de contas que existem (mesma regra do agregado)
+  const upsertTempo = db.prepare(`
+    INSERT INTO player_server_daily (playerId, serverId, day, seconds, sessions)
+    SELECT ?, ?, ?, ?, ?
+    WHERE EXISTS (SELECT 1 FROM accounts WHERE playerId = ?)
+    ON CONFLICT(playerId, serverId, day) DO UPDATE SET
+      seconds  = seconds + excluded.seconds,
+      sessions = sessions + excluded.sessions`);
 
   const registrarLogin = (playerId) => {
     const id = Number(playerId);
@@ -213,19 +221,37 @@ function instalarRastreioDeAtividade(db, authStore, relogio, logger) {
     }
   };
 
+  let diaCache = relogio.dia();
   const partidasMarcadas = new Set();
   const registrarPartida = (playerId) => {
     const id = Number(playerId);
     if (!Number.isInteger(id) || id <= 0) return;
-    const day = relogio.dia();
-    const key = `${id}:${day}`;
-    if (partidasMarcadas.has(key)) return;
+    const now = nowSeconds();
+    const day = relogio.dia(now);
+    if (day !== diaCache) { partidasMarcadas.clear(); diaCache = day; }
+    if (partidasMarcadas.has(id)) return;
     try {
-      if (marcarPartida.run(id, day).changes > 0) partidasMarcadas.add(key);
+      upsertPartida.run(id, day, now, now);
+      partidasMarcadas.add(id);
     } catch (e) {
       logger.warn(`[Relatórios] falha ao marcar partida de ${id}: ${e.message}`);
     }
-    if (partidasMarcadas.size > 100000) partidasMarcadas.clear();
+  };
+
+  // lote do game server (a cada ~60s): entries já validados/clampados pela rota
+  const registrarTempo = (serverId, entries) => {
+    if (!serverId || !Array.isArray(entries) || entries.length === 0) return;
+    const day = relogio.dia();
+    try {
+      db.transaction(() => {
+        for (const e of entries) {
+          upsertTempo.run(e.accountId, String(serverId), day, e.seconds, e.newSession ? 1 : 0, e.accountId);
+        }
+      })();
+      for (const e of entries) registrarPartida(e.accountId);
+    } catch (err) {
+      logger.warn(`[Relatórios] falha ao registrar tempo de ${serverId}: ${err.message}`);
+    }
   };
 
   const envolver = (nome, depois) => {
@@ -242,9 +268,15 @@ function instalarRastreioDeAtividade(db, authStore, relogio, logger) {
   };
   // _createSession roda em todo login/registro (email, guest, login/guest)
   envolver("_createSession", ([playerId]) => registrarLogin(playerId));
+  // fallback: se algum servidor de jogo mandar stats com o id numérico da conta
   envolver("updateStats", ([playerId]) => registrarPartida(playerId));
   envolver("addXP", ([playerId]) => registrarPartida(playerId));
+  // tempo de jogo: addPlaytimeBatch(serverId, serverName, entries)
+  envolver("addPlaytimeBatch", ([serverId, , entries]) => registrarTempo(serverId, entries));
   // validateSession NÃO é envolvido: o chat usa ele. O /auth/validate-session registra explicitamente.
+
+  // fonte principal de "jogou partida": /join/validate (ver server.js)
+  authStore.registrarPartidaDiaria = registrarPartida;
 
   if (vazia) {
     const fontes = [
@@ -265,7 +297,7 @@ function instalarRastreioDeAtividade(db, authStore, relogio, logger) {
     logger.info(`[Relatórios] backfill: ${total} dia(s)-jogador estimados a partir de cadastros e sessões`);
   }
 
-  return { registrarLogin, registrarPartida };
+  return { registrarLogin, registrarPartida, registrarTempo };
 }
 
 function populacaoAgora(store, config) {
@@ -339,6 +371,8 @@ function calcularVeredito(A, P, RA, RP, extra) {
     { nome: "Receita", v: rel(A.receita, P.receita), peso: 2 },
     { nome: "Pagantes únicos", v: rel(A.pagantes, P.pagantes), peso: 1 },
     { nome: "MAU (30 dias)", v: extra.mauConfiavel ? rel(extra.mau, extra.mauAnterior) : null, peso: 1, nota: "aguardando 60 dias" },
+    // engajamento: tempo de jogo (vem de montarRelatorioTempo)
+    ...((extra.tempo && extra.tempo.sinais) || []).map((s) => ({ ...s })),
   ];
   let soma = 0, pesos = 0;
   for (const s of sinais) {
@@ -529,7 +563,10 @@ function montarRelatorioCrescimento(ctx, days) {
     GROUP BY c.day ORDER BY c.day DESC`, m, coortesDesde, hoje0)
     .map((c) => {
       const idade = diasEntre(c.day, hoje);
-      for (const n of RETENCAO_DIAS) if (idade <= n) c[`d${n}`] = null;
+      const antesDoRastreio = diasEntre(c.day, rastreioDesde); // > n ⇒ dia X+N não foi rastreado
+      for (const n of RETENCAO_DIAS) {
+        if (idade <= n || antesDoRastreio > n) c[`d${n}`] = null; // ainda não deu tempo OU não medido
+      }
       return c;
     });
   const retJanela = (desloc) => {
@@ -679,22 +716,196 @@ function snapshotAoVivo(ctx) {
   };
 }
 
+const FAIXAS_TEMPO = [
+  [0, 300, "< 5 min"],
+  [300, 900, "5–15 min"],
+  [900, 1800, "15–30 min"],
+  [1800, 3600, "30–60 min"],
+  [3600, 7200, "1–2 h"],
+  [7200, Infinity, "2 h+"],
+];
+const faixaDe = (s) => FAIXAS_TEMPO.findIndex(([a, b]) => s >= a && s < b);
+
+function montarRelatorioTempo(ctx, days) {
+  const { db, relogio, store } = ctx;
+  const dia = relogio.dia;
+  const m = relogio.mod;
+  const hoje0 = relogio.inicioDia();
+  const hoje = dia(hoje0);
+  const ontem = dia(hoje0 - 86400);
+  const iniA = dia(hoje0 - days * 86400);
+  const iniP = dia(hoje0 - 2 * days * 86400);
+  const desde = db.prepare(`SELECT v FROM report_meta WHERE k = 'playtime_since'`).get()?.v || hoje;
+  const q = (sql, ...p) => db.prepare(sql).all(...p);
+  const one = (sql, ...p) => db.prepare(sql).get(...p);
+  const rel = (a, b) => (a == null || b == null || !b ? null : (a - b) / b);
+
+  // tempo por jogador por dia (soma de todos os servidores)
+  const PD = `SELECT playerId, day, SUM(seconds) s, SUM(sessions) n
+              FROM player_server_daily WHERE day >= ? AND day < ? GROUP BY playerId, day`;
+
+  // ── série diária ──
+  const porDia = new Map(q(`SELECT day, COUNT(*) jogadores, SUM(s) seg, SUM(n) sessoes FROM (${PD}) GROUP BY day`, iniA, hoje).map((r) => [r.day, r]));
+  const logaram = new Map(q(`SELECT day, COUNT(*) c FROM player_daily_activity WHERE day >= ? AND day < ? GROUP BY day`, iniA, hoje).map((r) => [r.day, r.c]));
+  const serie = Array.from({ length: days }, (_, i) => dia(hoje0 - (days - i) * 86400)).map((day) => {
+    if (day < desde) return { day, jogadores: null, horas: null, mediaMin: null, sessaoMin: null, pctJogaram: null };
+    const r = porDia.get(day);
+    const lg = logaram.get(day) || 0;
+    return {
+      day,
+      jogadores: r?.jogadores || 0,
+      horas: r ? Math.round((r.seg / 3600) * 10) / 10 : 0,
+      mediaMin: r?.jogadores ? Math.round((r.seg / r.jogadores / 60) * 10) / 10 : null,
+      sessaoMin: r?.sessoes ? Math.round((r.seg / r.sessoes / 60) * 10) / 10 : null,
+      pctJogaram: lg ? Math.min(1, (r?.jogadores || 0) / lg) : null,
+    };
+  });
+
+  // ── agregados do período ──
+  const agregar = (a, b) => {
+    const nDias = Math.max(1, diasEntre(a, b));
+    const t = one(`SELECT COUNT(*) pd, COUNT(DISTINCT playerId) unicos, COALESCE(SUM(s),0) seg, COALESCE(SUM(n),0) sessoes FROM (${PD})`, a, b);
+    const diasMedio = one(`SELECT AVG(d) m FROM (SELECT COUNT(*) d FROM (${PD}) GROUP BY playerId)`, a, b).m;
+    const lg = one(`SELECT COUNT(*) c FROM player_daily_activity WHERE day >= ? AND day < ?`, a, b).c;
+    return {
+      jogadoresUnicos: t.unicos,
+      horasTotal: t.seg / 3600,
+      horasDia: t.seg / 3600 / nDias,
+      minPorJogadorDia: t.pd ? t.seg / t.pd / 60 : null,
+      minPorJogadorPeriodo: t.unicos ? t.seg / t.unicos / 60 : null,
+      sessaoMin: t.sessoes ? t.seg / t.sessoes / 60 : null,
+      sessoesPorJogadorDia: t.pd ? t.sessoes / t.pd : null,
+      diasJogadosMedio: diasMedio ?? null,
+      pctJogaram: lg ? Math.min(1, t.pd / lg) : null,
+    };
+  };
+  const atual = agregar(iniA, hoje);
+  const anterior = agregar(iniP, iniA);
+  const baseConfiavel = iniP >= desde;
+  const atualCompleto = iniA >= desde;
+
+  // ── distribuição de tempo por jogador-dia ──
+  const cont = new Map(q(`SELECT CASE ${FAIXAS_TEMPO.map(([a, b], i) => `WHEN s >= ${a}${Number.isFinite(b) ? ` AND s < ${b}` : ""} THEN ${i}`).join(" ")} END f,
+                                 COUNT(*) n FROM (${PD}) GROUP BY f`, iniA, hoje).map((r) => [r.f, r.n]));
+  const distribuicao = FAIXAS_TEMPO.map(([, , faixa], i) => ({ faixa, n: cont.get(i) || 0 }));
+
+  // ── frequência: quantos dias diferentes cada jogador jogou no período ──
+  const freqOrdem = ["1 dia", "2–3 dias", "4–7 dias", "8+ dias"];
+  const freqMap = new Map(q(`SELECT CASE WHEN d = 1 THEN '1 dia' WHEN d <= 3 THEN '2–3 dias' WHEN d <= 7 THEN '4–7 dias' ELSE '8+ dias' END faixa, COUNT(*) n
+                             FROM (SELECT COUNT(*) d FROM (${PD}) GROUP BY playerId) GROUP BY faixa`, iniA, hoje).map((r) => [r.faixa, r.n]));
+  const frequencia = freqOrdem.map((faixa) => ({ faixa, n: freqMap.get(faixa) || 0 }));
+
+  // ── retenção por tempo jogado no 1º dia da conta (o indicador de "gostou") ──
+  const coorteIni = hoje0 - (days + 7) * 86400;
+  const coorteFim = hoje0 - 86400; // D1 precisa do dia seguinte fechado
+  const d7Limite = dia(hoje0 - 8 * 86400);
+  const grupos = [{ faixa: "não entrou em partida", contas: 0, d1: 0, b1: 0, d7: 0, b7: 0 },
+    ...FAIXAS_TEMPO.map(([, , faixa]) => ({ faixa, contas: 0, d1: 0, b1: 0, d7: 0, b7: 0 }))];
+  for (const c of q(`
+    SELECT x.cday,
+      COALESCE((SELECT SUM(p.seconds) FROM player_server_daily p WHERE p.playerId = x.playerId AND p.day = x.cday), 0) s,
+      EXISTS(SELECT 1 FROM player_daily_activity d WHERE d.playerId = x.playerId AND d.day = date(x.cday, '+1 day')) r1,
+      EXISTS(SELECT 1 FROM player_daily_activity d WHERE d.playerId = x.playerId AND d.day = date(x.cday, '+7 day')) r7
+    FROM (SELECT playerId, date(createdAt, 'unixepoch', ?) cday FROM accounts WHERE createdAt >= ? AND createdAt < ?) x`,
+    m, coorteIni, coorteFim)) {
+    if (c.cday < desde) continue; // 1º dia sem medição de tempo
+    const g = grupos[c.s > 0 ? faixaDe(c.s) + 1 : 0];
+    g.contas++;
+    g.b1++; g.d1 += c.r1;
+    if (c.cday <= d7Limite) { g.b7++; g.d7 += c.r7; }
+  }
+  const retencaoPorTempo = grupos.map((g) => ({
+    faixa: g.faixa, contas: g.contas,
+    d1: g.b1 ? g.d1 / g.b1 : null,
+    d7: g.b7 ? g.d7 / g.b7 : null, base7: g.b7,
+  }));
+
+  // ── por servidor ──
+  const nomes = new Map(q(`SELECT serverId, MAX(serverName) n FROM playtime GROUP BY serverId`).map((r) => [r.serverId, r.n]));
+  const prevSrv = new Map(q(`SELECT serverId, SUM(seconds) seg FROM player_server_daily WHERE day >= ? AND day < ? GROUP BY serverId`, iniP, iniA).map((r) => [r.serverId, r.seg]));
+  const porServidor = q(`SELECT serverId, COUNT(DISTINCT playerId) jogadores, SUM(seconds) seg, SUM(sessions) sessoes
+                         FROM player_server_daily WHERE day >= ? AND day < ? GROUP BY serverId ORDER BY seg DESC`, iniA, hoje)
+    .map((s) => ({
+      ...s,
+      nome: store.getServer(s.serverId)?.name || nomes.get(s.serverId) || s.serverId,
+      online: !!store.getServer(s.serverId),
+      minPorJogador: s.jogadores ? s.seg / s.jogadores / 60 : null,
+      sessaoMin: s.sessoes ? s.seg / s.sessoes / 60 : null,
+      segAnterior: prevSrv.get(s.serverId) ?? null,
+    }));
+
+  // ── quem mais joga ──
+  const top = q(`SELECT p.playerId, a.playerName, a.level, SUM(p.seconds) seg, COUNT(DISTINCT p.day) dias, SUM(p.sessions) sessoes
+                 FROM player_server_daily p LEFT JOIN accounts a ON a.playerId = p.playerId
+                 WHERE p.day >= ? AND p.day < ? GROUP BY p.playerId ORDER BY seg DESC LIMIT 15`, iniA, hoje);
+
+  const sinais = [
+    { nome: "Tempo por jogador/dia", v: baseConfiavel ? rel(atual.minPorJogadorDia, anterior.minPorJogadorDia) : null, peso: 2, nota: "aguardando histórico de tempo" },
+    { nome: "Horas jogadas/dia", v: baseConfiavel ? rel(atual.horasDia, anterior.horasDia) : null, peso: 2, nota: "aguardando histórico de tempo" },
+    { nome: "Dias jogados por jogador", v: baseConfiavel ? rel(atual.diasJogadosMedio, anterior.diasJogadosMedio) : null, peso: 1, nota: "aguardando histórico de tempo" },
+  ];
+
+  return {
+    days, hoje, ontem, desde, baseConfiavel, atualCompleto,
+    serie, atual, anterior, distribuicao, frequencia, retencaoPorTempo, porServidor, top, sinais,
+  };
+}
+
+function tempoAoVivo(ctx) {
+  const { db, relogio } = ctx;
+  const now = nowSeconds();
+  const soma = (day) => {
+    const r = db.prepare(`SELECT COUNT(DISTINCT playerId) j, COALESCE(SUM(seconds),0) s, COALESCE(SUM(sessions),0) n
+                          FROM player_server_daily WHERE day = ?`).get(day);
+    return { jogadores: r.j, segundos: r.s, sessoes: r.n, mediaSeg: r.j ? r.s / r.j : null };
+  };
+  return { hoje: soma(relogio.dia(now)), ontem: soma(relogio.dia(relogio.inicioDia(now) - 86400)) };
+}
+
 function registrarRotasRelatorios(app, r, adminAuth, wrap, ctx) {
   const toInt = (v, def) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : def; };
+  const clampDays = (v) => Math.max(7, Math.min(365, toInt(v, 30)));
+
+  const cacheT = new Map();
+  const tempo = (days) => {
+    const c = cacheT.get(days);
+    if (c && Date.now() - c.t < 30000) return c.v;
+    const v = montarRelatorioTempo(ctx, days);
+    cacheT.set(days, { t: Date.now(), v });
+    return v;
+  };
 
   const cacheG = new Map();
   app.get(`${r}/reports/growth`, adminAuth, wrap((req, res) => {
-    const days = Math.max(7, Math.min(365, toInt(req.query.days, 30)));
+    const days = clampDays(req.query.days);
     const c = cacheG.get(days);
     if (c && Date.now() - c.t < 30000) return res.json(c.v);
-    const v = { ok: true, ...montarRelatorioCrescimento(ctx, days) };
+
+    const g = montarRelatorioCrescimento(ctx, days);
+    // veredito recalculado incluindo os sinais de engajamento (tempo de jogo)
+    g.veredito = calcularVeredito(g.atual, g.anterior, g.retencao.atual, g.retencao.anterior, {
+      baseConfiavel: g.baseConfiavel,
+      mauConfiavel: g.audiencia.mauConfiavel,
+      mau: g.audiencia.mau,
+      mauAnterior: g.audiencia.mauAnterior,
+      tendenciaDAU: g.tendenciaDAU,
+      tempo: tempo(days),
+    });
+
+    const v = { ok: true, ...g };
     cacheG.set(days, { t: Date.now(), v });
     res.json(v);
   }));
 
+  app.get(`${r}/reports/playtime`, adminAuth, wrap((req, res) => {
+    res.json({ ok: true, ...tempo(clampDays(req.query.days)) });
+  }));
+
   let cacheLive = null;
   const live = () => {
-    if (!cacheLive || Date.now() - cacheLive.t > 3000) cacheLive = { t: Date.now(), v: snapshotAoVivo(ctx) };
+    if (!cacheLive || Date.now() - cacheLive.t > 3000) {
+      cacheLive = { t: Date.now(), v: { ...snapshotAoVivo(ctx), tempo: tempoAoVivo(ctx) } };
+    }
     return cacheLive.v;
   };
 
@@ -721,15 +932,11 @@ function registrarRotasRelatorios(app, r, adminAuth, wrap, ctx) {
   });
 }
 
-// ============================================================================
-// REGISTRO
-// ============================================================================
-
 function registrarRotasAdmin(app, deps) {
   const {
     config, logger, store, authStore, banStore, pushStore, fcm,
-    shopStore, googleShop, skinCatalog, chatClients, playWatcher,
-    kickFromChat, onCredited,
+    shopStore, googleShop, skinCatalog, playWatcher,
+    encerrarAcesso, onCredited, rouletteStore,
   } = deps;
 
   const db = authStore.db;
@@ -888,7 +1095,6 @@ function registrarRotasAdmin(app, deps) {
         players: playersEmServidores,
         lista: servers,
       },
-      chat: { online: chatClients.size },
       bans: banStore.listBans(true).length,
       push: pushStore.getStats(),
       play: playWatcher ? playWatcher.status() : null,
@@ -899,15 +1105,12 @@ function registrarRotasAdmin(app, deps) {
     });
   }));
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // JOGADORES
-  // ══════════════════════════════════════════════════════════════════════════
   app.get(`${r}/players`, adminAuth, wrap((req, res) => {
     const q = String(req.query.q || "").trim();
     const limit = Math.min(200, toInt(req.query.limit, 50));
     const offset = Math.max(0, toInt(req.query.offset, 0));
     const tipo = req.query.type;
-    const orderBy = ["createdAt", "level", "kills", "balanceDC", "balanceDS", "playerName"].includes(req.query.sort)
+    const orderBy = ["createdAt", "level", "kills", "balanceDC", "balanceDS", "playerName", "playtimeSeconds", "lastPlayedAt"].includes(req.query.sort)
       ? req.query.sort : "createdAt";
     const dir = req.query.dir === "asc" ? "ASC" : "DESC";
 
@@ -915,29 +1118,32 @@ function registrarRotasAdmin(app, deps) {
     const params = [];
     if (q) {
       if (/^\d+$/.test(q)) {
-        where.push(`(playerId = ? OR playerName LIKE ? COLLATE NOCASE)`);
+        where.push(`(a.playerId = ? OR a.playerName LIKE ? COLLATE NOCASE)`);
         params.push(Number(q), `%${q}%`);
       } else {
-        where.push(`(playerName LIKE ? COLLATE NOCASE OR email LIKE ? COLLATE NOCASE OR guestDeviceId = ?)`);
+        where.push(`(a.playerName LIKE ? COLLATE NOCASE OR a.email LIKE ? COLLATE NOCASE OR a.guestDeviceId = ?)`);
         params.push(`%${q}%`, `%${q}%`, q);
       }
     }
     if (tipo === "guest" || tipo === "email") {
-      where.push(`accountType = ?`);
+      where.push(`a.accountType = ?`);
       params.push(tipo);
     }
     const w = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
     const rows = db.prepare(
-      `SELECT playerId, playerName, email, accountType, balanceDC, balanceDS, level, xp,
-              kills, deaths, headshots, createdAt, guestDeviceId
-       FROM accounts ${w} ORDER BY ${orderBy} ${dir} LIMIT ? OFFSET ?`,
+      `SELECT a.playerId, a.playerName, a.email, a.accountType, a.balanceDC, a.balanceDS, a.level, a.xp,
+              a.kills, a.deaths, a.headshots, a.createdAt, a.guestDeviceId,
+              COALESCE(pt.seg, 0) playtimeSeconds, pt.ultima lastPlayedAt
+       FROM accounts a
+       LEFT JOIN (SELECT playerId, SUM(totalSeconds) seg, MAX(lastPlayedAt) ultima FROM playtime GROUP BY playerId) pt
+         ON pt.playerId = a.playerId
+       ${w} ORDER BY ${orderBy} ${dir} LIMIT ? OFFSET ?`,
     ).all(...params, limit, offset);
-    const total = db.prepare(`SELECT COUNT(*) c FROM accounts ${w}`).get(...params).c;
+    const total = db.prepare(`SELECT COUNT(*) c FROM accounts a ${w}`).get(...params).c;
 
     for (const p of rows) {
       p.banned = !!banStore.isPlayerBanned(p.playerId);
-      p.online = chatClients.has(p.playerId) || chatClients.has(String(p.playerId));
     }
     res.json({ ok: true, rows, total, limit, offset });
   }));
@@ -959,17 +1165,47 @@ function registrarRotasAdmin(app, deps) {
     const bans = banStore.listBans(false).filter((b) => String(b.playerId) === String(id));
     const pushTokens = pushStore.getTokensForPlayer(id).map((t) => ({ ...t, token: `${t.token.slice(0, 14)}…` }));
 
+    // ── tempo de jogo ──
+    const pt = typeof authStore.getPlaytime === "function" ? authStore.getPlaytime(id) : { totalSeconds: 0, servers: [] };
+    for (const s of pt.servers) {
+      const vivo = store.getServer(s.serverId);
+      s.serverName = vivo?.name || s.serverName || s.serverId;
+      s.online = !!vivo;
+    }
+    const hoje0 = relogio.inicioDia();
+    const dias30 = Array.from({ length: 30 }, (_, i) => relogio.dia(hoje0 - (29 - i) * 86400));
+    const porDia = new Map(db.prepare(
+      `SELECT day, SUM(seconds) seg, SUM(sessions) sessoes FROM player_server_daily
+       WHERE playerId = ? AND day >= ? GROUP BY day`,
+    ).all(id, dias30[0]).map((x) => [x.day, x]));
+    const tempoDiario = dias30.map((day) => ({ day, seg: porDia.get(day)?.seg || 0, sessoes: porDia.get(day)?.sessoes || 0 }));
+    const diasJogadosTotal = db.prepare(`SELECT COUNT(DISTINCT day) c FROM player_server_daily WHERE playerId = ?`).get(id).c;
+    const playtime = {
+      ...pt,
+      sessions: pt.servers.reduce((a, s) => a + s.sessions, 0),
+      firstPlayedAt: pt.servers.length ? Math.min(...pt.servers.map((s) => s.firstPlayedAt)) : null,
+      lastPlayedAt: pt.servers.length ? Math.max(...pt.servers.map((s) => s.lastPlayedAt)) : null,
+      diasJogadosTotal,
+      diasJogados30: tempoDiario.filter((d) => d.seg > 0).length,
+      tempoDiario,
+    };
+    const roleta = rouletteStore ? {
+      ativa: rouletteStore.activeId,
+      progresso: db.prepare(`SELECT * FROM roulette_progress WHERE playerId = ? ORDER BY updatedAt DESC`).all(id),
+      giros: db.prepare(`SELECT * FROM roulette_spins WHERE playerId = ? ORDER BY spinId DESC LIMIT 50`).all(id),
+      totalGiros: db.prepare(`SELECT COUNT(*) c FROM roulette_spins WHERE playerId = ?`).get(id).c,
+    } : null;
     res.json({
       ok: true,
       account: {
         ...account,
         xpToNextLevel: authStore._xpRequiredForLevel(account.level),
         banned: !!banStore.isPlayerBanned(id),
-        online: chatClients.has(id) || chatClients.has(String(id)),
       },
       skins, equipped, sessions, ordersMp, ordersPlay, ledger,
       fingerprints: fp ? fp.devices : [],
-      bans, pushTokens,
+      bans, pushTokens, playtime,
+      roleta,
     });
   }));
 
@@ -1053,35 +1289,24 @@ function registrarRotasAdmin(app, deps) {
     const acc = db.prepare(`SELECT playerId, playerName, email FROM accounts WHERE playerId = ?`).get(id);
     if (!acc) return bad(res, "Conta não encontrada", 404);
 
-    kickFromChat(id, "Conta removida");
+    encerrarAcesso(id);
     db.transaction(() => {
       db.prepare(`DELETE FROM sessions WHERE playerId = ?`).run(id);
       db.prepare(`DELETE FROM skins WHERE playerId = ?`).run(id);
       db.prepare(`DELETE FROM equipped_skins WHERE playerId = ?`).run(id);
       db.prepare(`DELETE FROM accounts WHERE playerId = ?`).run(id);
+      if (rouletteStore) db.prepare(`DELETE FROM roulette_progress WHERE playerId = ?`).run(id);
+      // roulette_spins fica: é histórico, igual pedidos e ledger
       // pedidos e ledger ficam: são registro financeiro
     })();
-    pushStore.removeTokensOfPlayer(id);
-
     audit(req, "player.delete", id, acc);
     res.json({ ok: true });
-  }));
-
-  app.post(`${r}/players/:id/kick`, adminAuth, wrap((req, res) => {
-    const id = toInt(req.params.id, NaN);
-    const client = chatClients.get(id) || chatClients.get(String(id));
-    if (client && client.ws.readyState === 1) {
-      client.ws.send(JSON.stringify({ type: "session_displaced", reason: req.body?.reason || "Desconectado pelo administrador" }));
-      setTimeout(() => client.ws.close(), 100);
-    }
-    audit(req, "player.kick", id);
-    res.json({ ok: true, estavaOnline: !!client });
   }));
 
   app.post(`${r}/players/:id/sessions/revoke`, adminAuth, wrap((req, res) => {
     const id = toInt(req.params.id, NaN);
     const n = db.prepare(`DELETE FROM sessions WHERE playerId = ?`).run(id).changes;
-    kickFromChat(id, "Sessão encerrada pelo administrador");
+    encerrarAcesso(id);
     audit(req, "player.revokeSessions", id, { removidas: n });
     res.json({ ok: true, removidas: n });
   }));
@@ -1196,7 +1421,7 @@ function registrarRotasAdmin(app, deps) {
     const id = toInt(playerId, NaN);
     if (!Number.isInteger(id)) return bad(res, "playerId inválido");
     const rec = banStore.banPlayer(id, reason || "Banido pelo painel", "painel");
-    kickFromChat(id, reason || "Você foi banido");
+    encerrarAcesso(id);
     audit(req, "ban.create", id, { reason });
     res.json({ ok: true, ban: rec });
   }));
@@ -1488,6 +1713,212 @@ function registrarRotasAdmin(app, deps) {
   });
 
   // ══════════════════════════════════════════════════════════════════════════
+  // ROLETA
+  // ══════════════════════════════════════════════════════════════════════════
+  if (rouletteStore) {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_roulette_spins_roulette ON roulette_spins(rouletteId, createdAt)`);
+
+    const vazioRoleta = () => ({ activeRouletteId: null, roulettes: [] });
+
+    app.get(`${r}/roulette`, adminAuth, wrap((req, res) => {
+      let raw, erros = [], avisos = [];
+      try {
+        raw = rouletteStore.lerRaw();
+        const v = rouletteStore.validarRaw(raw);
+        erros = v.erros;
+        avisos = v.avisos;
+      } catch (e) {
+        raw = vazioRoleta();
+        erros = [e.message];
+      }
+
+      const resumo = db.prepare(
+        `SELECT rouletteId, COUNT(*) giros, COUNT(DISTINCT playerId) jogadores, MAX(createdAt) ultimo
+         FROM roulette_spins GROUP BY rouletteId`,
+      ).all();
+
+      const skins = (lerSkinsRaw().skins || []).map((s) => ({
+        skinId: s.skinId,
+        name: s.name || null,
+        slotKey: s.slotKey || null,
+        available: s.available !== false,
+      }));
+
+      res.json({ ok: true, raw, ativaCarregada: rouletteStore.activeId, erros, avisos, resumo, skins });
+    }));
+
+    // Validação estrita: qualquer roleta inválida recusa o arquivo inteiro.
+    app.put(`${r}/roulette`, adminAuth, wrap((req, res) => {
+      const novo = req.body?.config;
+      if (!novo || typeof novo !== "object" || !Array.isArray(novo.roulettes)) {
+        return bad(res, "config deve ter roulettes: []");
+      }
+      const ativaAntes = rouletteStore.activeId;
+      const x = rouletteStore.salvarRaw(novo);
+      audit(req, "roulette.save", x.activeId, { total: x.count, ativaAntes, avisos: x.avisos });
+      res.json({ ok: true, ...x });
+    }));
+
+    app.post(`${r}/roulette/validate`, adminAuth, wrap((req, res) => {
+      const v = rouletteStore.validarRaw(req.body?.config);
+      res.json({ ok: true, erros: v.erros, avisos: v.avisos, activeId: v.activeId, count: v.map.size });
+    }));
+
+    app.post(`${r}/roulette/reload`, adminAuth, wrap((req, res) => {
+      const count = rouletteStore.reload();
+      audit(req, "roulette.reload", rouletteStore.activeId, { count });
+      res.json({ ok: true, count, activeId: rouletteStore.activeId });
+    }));
+
+    // Simula o rascunho do painel (não precisa estar salvo).
+    app.post(`${r}/roulette/simulate`, adminAuth, wrap((req, res) => {
+      const b = req.body || {};
+      let raw = b.roulette;
+      if (!raw && b.rouletteId) {
+        raw = (rouletteStore.lerRaw().roulettes || []).find((x) => x.rouletteId === b.rouletteId);
+      }
+      if (!raw) return bad(res, "informe roulette ou rouletteId");
+
+      const sim = rouletteStore.simular(raw, {
+        spins: b.spins,
+        players: b.players,
+        maxSpinsPerPlayer: b.maxSpinsPerPlayer,
+      });
+      res.json({ ok: true, sim });
+    }));
+
+    app.get(`${r}/roulette/stats`, adminAuth, wrap((req, res) => {
+      const rid = String(req.query.rouletteId || rouletteStore.activeId || "");
+      if (!rid) return bad(res, "informe rouletteId");
+
+      const days = Math.max(1, Math.min(365, toInt(req.query.days, 30)));
+      const desde = relogio.inicioDia() - (days - 1) * 86400; // inclui hoje
+      const W = `rouletteId = ? AND createdAt >= ?`;
+      const P = [rid, desde];
+
+      const totais = db.prepare(
+        `SELECT COUNT(*) giros, COALESCE(SUM(wasFree),0) gratis, COALESCE(SUM(charged),0) gasto,
+                MAX(currency) moeda, COALESCE(SUM(pityTriggered),0) pity,
+                COALESCE(SUM(alreadyOwned),0) duplicatas, COUNT(DISTINCT playerId) jogadores,
+                COALESCE(SUM(rarity = 'legendary'),0) lendarios
+         FROM roulette_spins WHERE ${W}`,
+      ).get(...P);
+
+      const reembolsos = db.prepare(
+        `SELECT refundCurrency currency, SUM(refundAmount) total FROM roulette_spins
+         WHERE ${W} AND alreadyOwned = 1 AND refundAmount > 0 GROUP BY refundCurrency`,
+      ).all(...P);
+
+      const porRaridade = db.prepare(
+        `SELECT rarity, COUNT(*) n FROM roulette_spins WHERE ${W} GROUP BY rarity`,
+      ).all(...P);
+
+      const porSlot = db.prepare(
+        `SELECT slotIndex, skinId, rarity, COUNT(*) n FROM roulette_spins
+         WHERE ${W} GROUP BY slotIndex, skinId, rarity ORDER BY slotIndex`,
+      ).all(...P);
+
+      const diaRows = new Map(db.prepare(
+        `SELECT date(createdAt, 'unixepoch', ?) day, COUNT(*) giros, COALESCE(SUM(charged),0) gasto,
+                COUNT(DISTINCT playerId) jogadores
+         FROM roulette_spins WHERE ${W} GROUP BY day`,
+      ).all(relogio.mod, ...P).map((x) => [x.day, x]));
+
+      const porDia = Array.from({ length: days }, (_, i) => {
+        const day = relogio.dia(desde + i * 86400);
+        const x = diaRows.get(day);
+        return { day, giros: x?.giros || 0, gasto: x?.gasto || 0, jogadores: x?.jogadores || 0 };
+      });
+
+      const top = db.prepare(
+        `SELECT s.playerId, a.playerName, COUNT(*) giros, COALESCE(SUM(s.charged),0) gasto,
+                COALESCE(SUM(s.rarity = 'legendary'),0) lendarios
+         FROM roulette_spins s LEFT JOIN accounts a ON a.playerId = s.playerId
+         WHERE s.rouletteId = ? AND s.createdAt >= ?
+         GROUP BY s.playerId ORDER BY giros DESC LIMIT 15`,
+      ).all(...P);
+
+      const recentes = db.prepare(
+        `SELECT s.*, a.playerName FROM roulette_spins s LEFT JOIN accounts a ON a.playerId = s.playerId
+         WHERE s.rouletteId = ? ORDER BY s.spinId DESC LIMIT 40`,
+      ).all(rid);
+
+      const cfg = rouletteStore.roulettes.get(rid) || null;
+      const hardAt = cfg?.pity.hardAt || 0;
+
+      const progresso = db.prepare(
+        `SELECT COUNT(*) jogadores, COALESCE(SUM(freeSpinsAvailable),0) gratisPendentes,
+                AVG(spinsSinceLegendary) mediaSemLendario,
+                COALESCE(SUM(CASE WHEN ? > 0 AND spinsSinceLegendary >= ? - 5 THEN 1 ELSE 0 END),0) pertoDoPity
+         FROM roulette_progress WHERE rouletteId = ?`,
+      ).get(hardAt, hardAt, rid);
+
+      res.json({
+        ok: true,
+        rouletteId: rid,
+        days,
+        ativa: rid === rouletteStore.activeId,
+        config: cfg ? {
+          price: cfg.price,
+          currency: cfg.currency,
+          pity: cfg.pity,
+          slots: cfg.slots,
+          esperado: {
+            common: cfg.displayChances.common / 100,
+            rare: cfg.displayChances.rare / 100,
+            legendary: cfg.displayChances.legendary / 100,
+          },
+        } : null,
+        totais, reembolsos, porRaridade, porSlot, porDia, top, recentes, progresso,
+      });
+    }));
+
+    // Ajusta o progresso de um jogador. addFreeSpins soma; os demais campos definem o valor.
+    app.patch(`${r}/players/:id/roulette/:rid`, adminAuth, wrap((req, res) => {
+      const id = toInt(req.params.id, NaN);
+      const rid = String(req.params.rid || "");
+      if (!Number.isInteger(id)) return bad(res, "playerId inválido");
+      if (!rid) return bad(res, "rouletteId inválido");
+      if (!db.prepare(`SELECT 1 FROM accounts WHERE playerId = ?`).get(id)) return bad(res, "Conta não encontrada", 404);
+
+      const b = req.body || {};
+      const antes = db.prepare(
+        `SELECT totalSpins, freeSpinProgress, freeSpinsAvailable, spinsSinceLegendary
+         FROM roulette_progress WHERE playerId = ? AND rouletteId = ?`,
+      ).get(id, rid) || { totalSpins: 0, freeSpinProgress: 0, freeSpinsAvailable: 0, spinsSinceLegendary: 0 };
+
+      const depois = { ...antes };
+      for (const f of ["freeSpinsAvailable", "freeSpinProgress", "spinsSinceLegendary"]) {
+        if (b[f] === undefined) continue;
+        if (!Number.isInteger(b[f]) || b[f] < 0) return bad(res, `${f} deve ser inteiro >= 0`);
+        depois[f] = b[f];
+      }
+      if (b.addFreeSpins !== undefined) {
+        if (!Number.isInteger(b.addFreeSpins) || b.addFreeSpins === 0) return bad(res, "addFreeSpins deve ser inteiro diferente de zero");
+        depois.freeSpinsAvailable = Math.max(0, depois.freeSpinsAvailable + b.addFreeSpins);
+      }
+
+      rouletteStore._stmt.upsertProgress.run(
+        id, rid, depois.totalSpins, depois.freeSpinProgress,
+        depois.freeSpinsAvailable, depois.spinsSinceLegendary, nowSeconds(),
+      );
+
+      audit(req, "roulette.player.update", id, { rouletteId: rid, antes, depois });
+      res.json({ ok: true, progresso: depois });
+    }));
+
+    app.delete(`${r}/players/:id/roulette/:rid`, adminAuth, wrap((req, res) => {
+      const id = toInt(req.params.id, NaN);
+      if (!Number.isInteger(id)) return bad(res, "playerId inválido");
+      const n = db.prepare(`DELETE FROM roulette_progress WHERE playerId = ? AND rouletteId = ?`).run(id, req.params.rid).changes;
+      audit(req, "roulette.player.reset", id, { rouletteId: req.params.rid, removido: n > 0 });
+      res.json({ ok: true, removido: n > 0 });
+    }));
+  } else {
+    logger.warn("[Admin] rouletteStore não informado — aba Roleta indisponível.");
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // PACOTES DC
   // ══════════════════════════════════════════════════════════════════════════
   app.get(`${r}/packages`, adminAuth, (req, res) => {
@@ -1598,33 +2029,6 @@ function registrarRotasAdmin(app, deps) {
     audit(req, "push.send", all ? "all" : playerId ?? "lista", { title, tokens: tokens.length, enviados });
     res.json({ ok: true, tokens: tokens.length, enviados, invalidos, fcmEnabled: !!fcm?.enabled });
   }));
-
-  app.get(`${r}/chat/online`, adminAuth, (req, res) => {
-    const rows = [];
-    for (const [id, c] of chatClients) rows.push({ playerId: id, playerName: c.playerName, open: c.ws.readyState === 1 });
-    res.json({ ok: true, rows });
-  });
-
-  app.post(`${r}/chat/broadcast`, adminAuth, (req, res) => {
-    const text = String(req.body?.text || "").trim();
-    if (!text) return bad(res, "text obrigatório");
-    const payload = JSON.stringify({
-      type: "chat_message", playerId: 0, playerName: req.body?.as || "[ADMIN]", text: text.slice(0, 200), timestamp: nowSeconds(),
-    });
-    let n = 0;
-    for (const [, c] of chatClients) if (c.ws.readyState === 1) { c.ws.send(payload); n++; }
-    audit(req, "chat.broadcast", null, { text, entregues: n });
-    res.json({ ok: true, entregues: n });
-  });
-
-  app.post(`${r}/chat/system`, adminAuth, (req, res) => {
-    // mensagem estruturada que o cliente pode tratar (ex.: aviso de manutenção)
-    const payload = JSON.stringify({ type: req.body?.type || "system_notice", ...req.body });
-    let n = 0;
-    for (const [, c] of chatClients) if (c.ws.readyState === 1) { c.ws.send(payload); n++; }
-    audit(req, "chat.system", req.body?.type, req.body);
-    res.json({ ok: true, entregues: n });
-  });
 
   app.get(`${r}/play/status`, adminAuth, (req, res) => {
     res.json({ ok: true, status: playWatcher ? playWatcher.status() : null });
