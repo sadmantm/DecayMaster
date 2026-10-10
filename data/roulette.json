@@ -8,9 +8,9 @@
       "price": 100,
       "currency": "DC",
       "chances": {
-        "common": 70,
-        "rare": 25,
-        "legendary": 5
+        "common": 64,
+        "rare": 28,
+        "legendary": 8
       },
       "featuredSkinId": -1,
       "freeSpinThreshold": 10,
@@ -23,55 +23,58 @@
       "slots": [
         {
           "slotIndex": 0,
-          "skinId": 2001,
-          "rarity": "legendary"
+          "skinId": 3003,
+          "rarity": "common"
         },
         {
           "slotIndex": 1,
-          "skinId": 2003,
-          "rarity": "rare"
+          "skinId": 3009,
+          "rarity": "common"
         },
         {
           "slotIndex": 2,
-          "skinId": 2008,
-          "rarity": "rare"
+          "skinId": 2001,
+          "rarity": "common"
         },
         {
           "slotIndex": 3,
-          "skinId": 2012,
-          "rarity": "rare"
+          "skinId": 2008,
+          "rarity": "common"
         },
         {
           "slotIndex": 4,
-          "skinId": 2007,
-          "rarity": "common"
+          "skinId": 3005,
+          "rarity": "rare"
         },
         {
           "slotIndex": 5,
-          "skinId": 2006,
-          "rarity": "common"
+          "skinId": 3010,
+          "rarity": "rare"
         },
         {
           "slotIndex": 6,
-          "skinId": 2005,
-          "rarity": "common"
+          "skinId": 2009,
+          "rarity": "rare"
         },
         {
           "slotIndex": 7,
-          "skinId": 2004,
-          "rarity": "common"
+          "skinId": 2010,
+          "rarity": "rare"
         },
         {
           "slotIndex": 8,
-          "skinId": 2013,
-          "rarity": "common"
+          "skinId": 3002,
+          "rarity": "legendary"
         },
         {
           "slotIndex": 9,
-          "skinId": 2011,
-          "rarity": "common"
+          "skinId": 2003,
+          "rarity": "legendary"
         }
-      ]
+      ],
+      "duplicateRefund": {
+        "currency": "DS"
+      }
     }
   ]
 }

@@ -9,94 +9,158 @@
     },
     {
       "skinId": 2002,
-      "price": 500,
+      "price": 60,
       "currency": "DC",
       "available": true,
       "slotKey": "weapon:AK47"
     },
     {
       "skinId": 2003,
-      "price": 500,
+      "price": 240,
       "currency": "DC",
       "available": true,
       "slotKey": "weapon:AK47"
     },
     {
       "skinId": 2004,
-      "price": 500,
+      "price": 240,
       "currency": "DC",
       "available": true,
       "slotKey": "weapon:AK47"
     },
     {
       "skinId": 2005,
-      "price": 500,
+      "price": 60,
       "currency": "DC",
       "available": true,
       "slotKey": "weapon:AK47"
     },
     {
       "skinId": 2006,
-      "price": 500,
+      "price": 60,
       "currency": "DC",
       "available": true,
       "slotKey": "weapon:AK47"
     },
     {
       "skinId": 2007,
-      "price": 500,
+      "price": 440,
       "currency": "DC",
       "available": true,
       "slotKey": "weapon:AK47"
     },
     {
       "skinId": 2008,
-      "price": 500,
+      "price": 60,
       "currency": "DC",
       "available": true,
       "slotKey": "weapon:RIFLE-CACA"
     },
     {
       "skinId": 2009,
-      "price": 500,
+      "price": 120,
       "currency": "DC",
       "available": true,
       "slotKey": "weapon:RIFLE-CACA"
     },
     {
       "skinId": 2010,
-      "price": 500,
+      "price": 120,
       "currency": "DC",
       "available": true,
       "slotKey": "weapon:RIFLE-CACA"
     },
     {
       "skinId": 2011,
-      "price": 500,
+      "price": 460,
       "currency": "DC",
       "available": true,
       "slotKey": "weapon:RIFLE-CACA"
     },
     {
       "skinId": 2012,
-      "price": 500,
+      "price": 120,
       "currency": "DC",
       "available": true,
       "slotKey": "weapon:RIFLE-CACA"
     },
     {
       "skinId": 2013,
-      "price": 500,
+      "price": 240,
       "currency": "DC",
       "available": true,
       "slotKey": "weapon:RIFLE-CACA"
     },
     {
+      "skinId": 2014,
+      "name": "SMG GOLDEN",
+      "price": 240,
+      "currency": "DC",
+      "available": true,
+      "slotKey": "weapon:SMG"
+    },
+    {
+      "skinId": 2015,
+      "price": 240,
+      "currency": "DC",
+      "available": true,
+      "slotKey": "weapon:DESERT"
+    },
+    {
       "skinId": 3001,
-      "price": 200,
+      "price": 240,
       "currency": "DC",
       "available": true,
       "slotKey": "object:FORNALHA"
+    },
+    {
+      "skinId": 3002,
+      "price": 180,
+      "currency": "DC",
+      "available": true,
+      "slotKey": "object:FORNALHA"
+    },
+    {
+      "skinId": 3003,
+      "price": 80,
+      "currency": "DC",
+      "available": true,
+      "slotKey": "object:FORNALHA"
+    },
+    {
+      "skinId": 3004,
+      "price": 40,
+      "currency": "DC",
+      "available": true,
+      "slotKey": "object:FORNALHA"
+    },
+    {
+      "skinId": 3005,
+      "price": 100,
+      "currency": "DC",
+      "available": true,
+      "slotKey": "object:FORNALHA"
+    },
+    {
+      "skinId": 3009,
+      "price": 60,
+      "currency": "DC",
+      "available": true,
+      "slotKey": "object:PORTA_NIVEL_3"
+    },
+    {
+      "skinId": 3010,
+      "price": 120,
+      "currency": "DC",
+      "available": true,
+      "slotKey": "object:PORTA_NIVEL_3"
+    },
+    {
+      "skinId": 3012,
+      "price": 300,
+      "currency": "DC",
+      "available": true,
+      "slotKey": "object:PORTA_NIVEL_3"
     }
   ]
 }
