@@ -1,0 +1,623 @@
+{
+  "language": "en",
+  "categories": {
+    "initial": "Tutorial",
+    "daily": "Daily",
+    "weekly": "Weekly",
+    "monthly": "Monthly"
+  },
+  "quests": {
+    "ini_01_madeira_100": {
+      "title": "First steps",
+      "description": "Gather 100 wood by hitting trees"
+    },
+    "ini_02_node_madeira": {
+      "title": "Felling the first tree",
+      "description": "Cut down a tree completely"
+    },
+    "ini_03_craft_picareta": {
+      "title": "Mining tool",
+      "description": "Craft the basic pickaxe to mine"
+    },
+    "ini_04_pedra_100": {
+      "title": "Stone on stone",
+      "description": "Use the pickaxe to gather 100 stone"
+    },
+    "ini_05_node_pedra": {
+      "title": "Breaking stone",
+      "description": "Mine a stone node completely"
+    },
+    "ini_06_craft_machado": {
+      "title": "Lumberjack tool",
+      "description": "Craft a basic hatchet"
+    },
+    "ini_07_nodes_madeira_2": {
+      "title": "Wood stockpile",
+      "description": "Cut down 2 trees using the hatchet"
+    },
+    "ini_08_recursos_3": {
+      "title": "Basic survival",
+      "description": "Pick up 3 resources (e.g. berries)"
+    },
+    "ini_09_craft_planta": {
+      "title": "The blueprint",
+      "description": "Craft a building plan"
+    },
+    "ini_10_craft_martelo": {
+      "title": "Get to work",
+      "description": "Craft a building hammer"
+    },
+    "ini_11_fundacoes_4": {
+      "title": "A place to call home",
+      "description": "Build 4 foundations in a 2x2 square"
+    },
+    "ini_12_paredes_7": {
+      "title": "Raising walls",
+      "description": "Build 7 walls leaving 1 gap open"
+    },
+    "ini_13_parede_porta": {
+      "title": "Entrance",
+      "description": "Build 1 doorway in the gap"
+    },
+    "ini_14_tetos_4": {
+      "title": "A roof over your head",
+      "description": "Build 4 ceilings to close the base"
+    },
+    "ini_15_craft_porta": {
+      "title": "Locking up",
+      "description": "Craft a wooden door"
+    },
+    "ini_16_place_porta": {
+      "title": "Door in place",
+      "description": "Place the door in the doorway"
+    },
+    "ini_17_craft_armario": {
+      "title": "Claiming territory",
+      "description": "Craft a tool cupboard"
+    },
+    "ini_18_place_armario": {
+      "title": "Territory",
+      "description": "Place the tool cupboard in your base"
+    },
+    "ini_19_nodes_madeira_3": {
+      "title": "Real lumberjack",
+      "description": "Cut down 3 trees completely"
+    },
+    "ini_20_nodes_pedra_3": {
+      "title": "Stonemason",
+      "description": "Mine 3 stone nodes completely"
+    },
+    "ini_21_nodes_metal_3": {
+      "title": "Metal vein",
+      "description": "Mine 3 metal nodes completely"
+    },
+    "ini_22_nodes_enxofre_3": {
+      "title": "Smell of sulfur",
+      "description": "Mine 3 sulfur nodes completely"
+    },
+    "ini_23_craft_fornalha": {
+      "title": "Fire and metal",
+      "description": "Craft a furnace"
+    },
+    "ini_24_place_fornalha": {
+      "title": "Home smelting",
+      "description": "Place the furnace inside your base"
+    },
+    "ini_25_craft_bau": {
+      "title": "Room for loot",
+      "description": "Craft a large box"
+    },
+    "ini_26_place_bau": {
+      "title": "Storing the loot",
+      "description": "Place the large box inside your base"
+    },
+    "d_madeira_600": {
+      "title": "Lumberjack",
+      "description": "Gather 600 wood"
+    },
+    "d_madeira_1500": {
+      "title": "Human chainsaw",
+      "description": "Gather 1500 wood"
+    },
+    "d_pedra_400": {
+      "title": "Miner",
+      "description": "Gather 400 stone"
+    },
+    "d_pedra_1200": {
+      "title": "Jackhammer",
+      "description": "Gather 1200 stone"
+    },
+    "d_metal_150": {
+      "title": "Prospector",
+      "description": "Gather 150 metal"
+    },
+    "d_metal_400": {
+      "title": "Metal vein",
+      "description": "Gather 400 metal"
+    },
+    "d_enxofre_150": {
+      "title": "Alchemist",
+      "description": "Gather 150 sulfur"
+    },
+    "d_enxofre_400": {
+      "title": "Gunpowder potential",
+      "description": "Gather 400 sulfur"
+    },
+    "d_nodes_madeira_5": {
+      "title": "Clearing",
+      "description": "Cut down 5 trees completely"
+    },
+    "d_nodes_pedra_4": {
+      "title": "Cracking rocks",
+      "description": "Mine 4 stone nodes completely"
+    },
+    "d_nodes_metal_3": {
+      "title": "Ore hunter",
+      "description": "Mine 3 metal nodes completely"
+    },
+    "d_nodes_enxofre_3": {
+      "title": "Yellow nose",
+      "description": "Mine 3 sulfur nodes completely"
+    },
+    "d_nodes_8": {
+      "title": "Smash everything",
+      "description": "Mine 8 nodes of any kind"
+    },
+    "d_recursos_15": {
+      "title": "Collector",
+      "description": "Pick up 15 resources"
+    },
+    "d_pano_10": {
+      "title": "Natural fibers",
+      "description": "Pick up 10 cloth"
+    },
+    "d_frutinhas_10": {
+      "title": "Breakfast",
+      "description": "Pick up 10 berries"
+    },
+    "d_construir_10": {
+      "title": "Master builder",
+      "description": "Build 10 pieces of any kind"
+    },
+    "d_paredes_6": {
+      "title": "Rampart",
+      "description": "Build 6 walls"
+    },
+    "d_fundacoes_4": {
+      "title": "Groundwork",
+      "description": "Build 4 foundations"
+    },
+    "d_tetos_4": {
+      "title": "Coverage",
+      "description": "Build 4 ceilings"
+    },
+    "d_triangulares_4": {
+      "title": "Base geometry",
+      "description": "Build 4 triangle foundations"
+    },
+    "d_janelas_2": {
+      "title": "Room with a view",
+      "description": "Build 2 windows"
+    },
+    "d_escada_1": {
+      "title": "Second floor",
+      "description": "Build 1 staircase"
+    },
+    "d_craft_5": {
+      "title": "Artisan",
+      "description": "Craft 5 items of any kind"
+    },
+    "d_craft_portas_2": {
+      "title": "Carpenter",
+      "description": "Craft 2 wooden doors"
+    },
+    "d_craft_municao_30": {
+      "title": "Reload",
+      "description": "Craft 30 nails"
+    },
+    "d_place_saco_dormir": {
+      "title": "Plan B",
+      "description": "Place 1 sleeping bag"
+    },
+    "d_place_3": {
+      "title": "Decorator",
+      "description": "Place 3 items of any kind"
+    },
+    "d_kill_1": {
+      "title": "First blood",
+      "description": "Kill 1 player"
+    },
+    "d_kill_3": {
+      "title": "Hunter",
+      "description": "Kill 3 players"
+    },
+    "d_kill_5": {
+      "title": "Predator",
+      "description": "Kill 5 players"
+    },
+    "w_madeira_5000": {
+      "title": "Sawmill",
+      "description": "Gather 5000 wood"
+    },
+    "w_pedra_4000": {
+      "title": "Quarry",
+      "description": "Gather 4000 stone"
+    },
+    "w_metal_1500": {
+      "title": "Iron mine",
+      "description": "Gather 1500 metal"
+    },
+    "w_enxofre_1500": {
+      "title": "Sulfur mines",
+      "description": "Gather 1500 sulfur"
+    },
+    "w_nodes_40": {
+      "title": "Deforestation",
+      "description": "Mine 40 nodes of any kind"
+    },
+    "w_nodes_metal_20": {
+      "title": "Prospector",
+      "description": "Mine 20 metal nodes completely"
+    },
+    "w_nodes_enxofre_20": {
+      "title": "Sulfur route",
+      "description": "Mine 20 sulfur nodes completely"
+    },
+    "w_nodes_madeira_30": {
+      "title": "Timber!",
+      "description": "Cut down 30 trees completely"
+    },
+    "w_recursos_100": {
+      "title": "Forager",
+      "description": "Pick up 100 resources"
+    },
+    "w_pano_60": {
+      "title": "Weaver",
+      "description": "Pick up 60 cloth"
+    },
+    "w_frutinhas_60": {
+      "title": "Wild orchard",
+      "description": "Pick up 60 berries"
+    },
+    "w_fundacoes_20": {
+      "title": "Expansion",
+      "description": "Build 20 foundations"
+    },
+    "w_paredes_40": {
+      "title": "Great wall",
+      "description": "Build 40 walls"
+    },
+    "w_tetos_20": {
+      "title": "Floors",
+      "description": "Build 20 ceilings"
+    },
+    "w_construir_80": {
+      "title": "Construction company",
+      "description": "Build 80 pieces of any kind"
+    },
+    "w_portas_duplas_3": {
+      "title": "Garage",
+      "description": "Build 3 double doorways"
+    },
+    "w_meias_paredes_10": {
+      "title": "Parapet",
+      "description": "Build 10 half walls"
+    },
+    "w_craft_30": {
+      "title": "Workshop",
+      "description": "Craft 30 items of any kind"
+    },
+    "w_craft_municao_200": {
+      "title": "Armory",
+      "description": "Craft 200 nails"
+    },
+    "w_craft_arma_prego": {
+      "title": "Armed and dangerous",
+      "description": "Craft 1 nailgun"
+    },
+    "w_craft_bancada_pesquisa": {
+      "title": "Scientist",
+      "description": "Craft 1 research table"
+    },
+    "w_place_bau_3": {
+      "title": "Warehouse",
+      "description": "Place 3 large boxes"
+    },
+    "w_place_fornalha_2": {
+      "title": "Smelting line",
+      "description": "Place 2 furnaces"
+    },
+    "w_place_saco_dormir_4": {
+      "title": "Spawn network",
+      "description": "Place 4 sleeping bags"
+    },
+    "w_kill_10": {
+      "title": "Regional threat",
+      "description": "Kill 10 players"
+    },
+    "w_kill_25": {
+      "title": "Island terror",
+      "description": "Kill 25 players"
+    },
+    "w_kill_50": {
+      "title": "Warlord",
+      "description": "Kill 50 players"
+    },
+    "m_madeira_30000": {
+      "title": "Lumber mill",
+      "description": "Gather 30000 wood"
+    },
+    "m_pedra_25000": {
+      "title": "Stone empire",
+      "description": "Gather 25000 stone"
+    },
+    "m_metal_8000": {
+      "title": "Foundry",
+      "description": "Gather 8000 metal"
+    },
+    "m_enxofre_8000": {
+      "title": "Sulfur baron",
+      "description": "Gather 8000 sulfur"
+    },
+    "m_nodes_250": {
+      "title": "Force of nature",
+      "description": "Mine 250 nodes of any kind"
+    },
+    "m_nodes_metal_100": {
+      "title": "Heart of iron",
+      "description": "Mine 100 metal nodes completely"
+    },
+    "m_nodes_enxofre_100": {
+      "title": "Explosive",
+      "description": "Mine 100 sulfur nodes completely"
+    },
+    "m_recursos_500": {
+      "title": "Harvest lord",
+      "description": "Pick up 500 resources"
+    },
+    "m_construir_300": {
+      "title": "Fortress",
+      "description": "Build 300 pieces of any kind"
+    },
+    "m_fundacoes_100": {
+      "title": "Compound",
+      "description": "Build 100 foundations"
+    },
+    "m_craft_150": {
+      "title": "Industry",
+      "description": "Craft 150 items of any kind"
+    },
+    "m_craft_municao_1000": {
+      "title": "Arsenal",
+      "description": "Craft 1000 nails"
+    },
+    "m_craft_bancada_2": {
+      "title": "Advanced technology",
+      "description": "Craft 1 level 2 workbench"
+    },
+    "m_craft_desert_eagle": {
+      "title": "Heavy caliber",
+      "description": "Craft 1 Desert Eagle"
+    },
+    "m_place_bau_15": {
+      "title": "Clan vault",
+      "description": "Place 15 large boxes"
+    },
+    "m_place_fornalha_8": {
+      "title": "Steel mill",
+      "description": "Place 8 furnaces"
+    },
+    "m_kill_100": {
+      "title": "PvP legend",
+      "description": "Kill 100 players"
+    },
+    "m_kill_250": {
+      "title": "Reaper",
+      "description": "Kill 250 players"
+    },
+    "d_aranha_3": {
+      "title": "Bug spray",
+      "description": "Kill 3 spiders"
+    },
+    "d_aranha_5": {
+      "title": "Torn web",
+      "description": "Kill 5 spiders"
+    },
+    "d_aranha_10": {
+      "title": "Arachnophobia",
+      "description": "Kill 10 spiders"
+    },
+    "d_aranha_15": {
+      "title": "Eight legs fewer",
+      "description": "Kill 15 spiders"
+    },
+    "d_aranha_25": {
+      "title": "Exterminator",
+      "description": "Kill 25 spiders"
+    },
+    "d_cobra_3": {
+      "title": "Watch your step",
+      "description": "Kill 3 snakes"
+    },
+    "d_cobra_5": {
+      "title": "Antidote",
+      "description": "Kill 5 snakes"
+    },
+    "d_cobra_8": {
+      "title": "Venom-free",
+      "description": "Kill 8 snakes"
+    },
+    "d_cobra_12": {
+      "title": "Snake charmer",
+      "description": "Kill 12 snakes"
+    },
+    "d_cobra_20": {
+      "title": "Mongoose",
+      "description": "Kill 20 snakes"
+    },
+    "d_veado_2": {
+      "title": "Morning hunt",
+      "description": "Hunt 2 deer"
+    },
+    "d_veado_3": {
+      "title": "Quick feet",
+      "description": "Hunt 3 deer"
+    },
+    "d_veado_5": {
+      "title": "Dinner's on",
+      "description": "Hunt 5 deer"
+    },
+    "d_veado_8": {
+      "title": "Tracker",
+      "description": "Hunt 8 deer"
+    },
+    "d_veado_12": {
+      "title": "Dead aim",
+      "description": "Hunt 12 deer"
+    },
+    "d_animais_10": {
+      "title": "Safari",
+      "description": "Hunt 10 animals of any kind"
+    },
+    "d_animais_30": {
+      "title": "Wildlife",
+      "description": "Hunt 30 animals of any kind"
+    },
+    "w_aranha_30": {
+      "title": "Spider hunter",
+      "description": "Kill 30 spiders"
+    },
+    "w_aranha_50": {
+      "title": "Nest cleared",
+      "description": "Kill 50 spiders"
+    },
+    "w_aranha_80": {
+      "title": "End of webs",
+      "description": "Kill 80 spiders"
+    },
+    "w_aranha_120": {
+      "title": "Arachnid nightmare",
+      "description": "Kill 120 spiders"
+    },
+    "w_aranha_200": {
+      "title": "Colony slayer",
+      "description": "Kill 200 spiders"
+    },
+    "w_cobra_25": {
+      "title": "Snake hunter",
+      "description": "Kill 25 snakes"
+    },
+    "w_cobra_40": {
+      "title": "Snakeskin boots",
+      "description": "Kill 40 snakes"
+    },
+    "w_cobra_70": {
+      "title": "Viper's nest",
+      "description": "Kill 70 snakes"
+    },
+    "w_cobra_100": {
+      "title": "Broken fangs",
+      "description": "Kill 100 snakes"
+    },
+    "w_cobra_150": {
+      "title": "Serpent slayer",
+      "description": "Kill 150 snakes"
+    },
+    "w_veado_15": {
+      "title": "Hunting season",
+      "description": "Hunt 15 deer"
+    },
+    "w_veado_25": {
+      "title": "Full pantry",
+      "description": "Hunt 25 deer"
+    },
+    "w_veado_40": {
+      "title": "Forest runner",
+      "description": "Hunt 40 deer"
+    },
+    "w_veado_60": {
+      "title": "Stalker",
+      "description": "Hunt 60 deer"
+    },
+    "w_veado_90": {
+      "title": "No escape",
+      "description": "Hunt 90 deer"
+    },
+    "w_animais_100": {
+      "title": "Beast hunter",
+      "description": "Hunt 100 animals of any kind"
+    },
+    "w_animais_250": {
+      "title": "Food chain",
+      "description": "Hunt 250 animals of any kind"
+    },
+    "m_aranha_150": {
+      "title": "Pest control",
+      "description": "Kill 150 spiders"
+    },
+    "m_aranha_300": {
+      "title": "Web-free island",
+      "description": "Kill 300 spiders"
+    },
+    "m_aranha_500": {
+      "title": "Arachnid hunter",
+      "description": "Kill 500 spiders"
+    },
+    "m_aranha_800": {
+      "title": "Spider scourge",
+      "description": "Kill 800 spiders"
+    },
+    "m_aranha_1200": {
+      "title": "Arachnid extinction",
+      "description": "Kill 1200 spiders"
+    },
+    "m_cobra_120": {
+      "title": "Herpetologist",
+      "description": "Kill 120 snakes"
+    },
+    "m_cobra_250": {
+      "title": "Snakeless land",
+      "description": "Kill 250 snakes"
+    },
+    "m_cobra_400": {
+      "title": "Venom immune",
+      "description": "Kill 400 snakes"
+    },
+    "m_cobra_600": {
+      "title": "Serpent scourge",
+      "description": "Kill 600 snakes"
+    },
+    "m_cobra_1000": {
+      "title": "Saint Patrick",
+      "description": "Kill 1000 snakes"
+    },
+    "m_veado_80": {
+      "title": "Seasoned hunter",
+      "description": "Hunt 80 deer"
+    },
+    "m_veado_150": {
+      "title": "Tannery",
+      "description": "Hunt 150 deer"
+    },
+    "m_veado_250": {
+      "title": "King of the forest",
+      "description": "Hunt 250 deer"
+    },
+    "m_veado_400": {
+      "title": "Ghost of the woods",
+      "description": "Hunt 400 deer"
+    },
+    "m_veado_600": {
+      "title": "Legendary hunter",
+      "description": "Hunt 600 deer"
+    },
+    "m_animais_750": {
+      "title": "Apex predator",
+      "description": "Hunt 750 animals of any kind"
+    },
+    "m_animais_2000": {
+      "title": "Beastmaster",
+      "description": "Hunt 2000 animals of any kind"
+    }
+  }
+}

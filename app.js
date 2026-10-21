@@ -306,9 +306,18 @@ class BanStore {
     this.bansFile = path.join(dataDir, "bans.json");
     // fingerprints por playerId — histórico de dispositivos vistos
     this.fingerprintsFile = path.join(dataDir, "fingerprints.json");
+    // modelos de dispositivo banidos (chave = modelo normalizado)
+    this.modelBansFile = path.join(dataDir, "model-bans.json");
 
-    this.bans = this._load(this.bansFile);              // banId -> banRecord
+    this.bans = this._load(this.bansFile);                 // banId -> banRecord
     this.fingerprints = this._load(this.fingerprintsFile); // playerId -> fpRecord
+    this.modelBans = this._load(this.modelBansFile);       // modelKey -> modelBanRecord
+    this._modelSaveTimer = null;
+  }
+
+  /** "  INFINIX  Infinix X6725 " → "infinix infinix x6725" */
+  static normModel(s) {
+    return String(s ?? "").trim().replace(/\s+/g, " ").toLowerCase();
   }
 
   _load(filePath) {
@@ -332,6 +341,16 @@ class BanStore {
     }
   }
 
+  // Contador de tentativas: salva no máximo a cada 5s (o hacker pode spammar login).
+  _saveModelBansSoon() {
+    if (this._modelSaveTimer) return;
+    this._modelSaveTimer = setTimeout(() => {
+      this._modelSaveTimer = null;
+      this._save(this.modelBansFile, this.modelBans);
+    }, 5000);
+    this._modelSaveTimer.unref?.();
+  }
+
   // Chamado em todo login/registro para guardar o dispositivo daquele player.
   // Mantém um histórico (um player pode logar de vários aparelhos).
   recordFingerprint(playerId, fp) {
@@ -348,6 +367,8 @@ class BanStore {
       already.lastSeen = now;
       already.ip = fp.ip;          // atualiza último IP visto
       already.seenCount = (already.seenCount || 1) + 1;
+      if (fp.model) already.model = fp.model;
+      if (fp.platform) already.platform = fp.platform;
     } else {
       existing.devices.push({
         deviceId: fp.deviceId || null,
@@ -366,6 +387,7 @@ class BanStore {
   }
 
   // Retorna o banRecord se este fingerprint casar com algum ban ativo, senão null.
+  // Usado antes de login E de criação de conta.
   checkBanned(fp) {
     for (const ban of this.bans.values()) {
       if (!ban.active) continue;
@@ -374,7 +396,121 @@ class BanStore {
       if (fp.hardwareId && ban.hardwareIds.includes(fp.hardwareId)) return ban;
       if (this.banByIp && fp.ip && ban.ips.includes(fp.ip)) return ban;
     }
-    return null;
+    return this.checkModelBanned(fp);
+  }
+
+  // Ban por modelo do aparelho (ex.: "INFINIX Infinix X6725").
+  checkModelBanned(fp) {
+    const key = BanStore.normModel(fp?.model);
+    if (!key) return null;
+
+    const ban = this.modelBans.get(key);
+    if (!ban || !ban.active) return null;
+    if (ban.platform && BanStore.normModel(fp.platform) !== ban.platform) return null;
+
+    ban.hits = (ban.hits || 0) + 1;
+    ban.lastHitAt = nowSeconds();
+    ban.lastHitIp = fp.ip || null;
+    ban.lastHitDeviceId = fp.deviceId || null;
+    this._saveModelBansSoon();
+    this.logger?.warn?.(`[BanStore] modelo banido bloqueado: "${ban.model}" device=${fp.deviceId} ip=${fp.ip}`);
+
+    return { ...ban, banId: `model:${key}`, type: "model" };
+  }
+
+  banModel(model, { platform = null, reason, admin = "console" } = {}) {
+    const key = BanStore.normModel(model);
+    if (key.length < 3) throw { status: 400, message: "Modelo inválido (mín. 3 caracteres)" };
+    if (key.length > 120) throw { status: 400, message: "Modelo longo demais" };
+
+    const antigo = this.modelBans.get(key);
+    const rec = {
+      key,
+      model: String(model).trim().replace(/\s+/g, " "),
+      platform: platform ? BanStore.normModel(platform) : null,
+      reason: reason || "Modelo de dispositivo banido",
+      admin,
+      active: true,
+      createdAt: nowSeconds(),
+      hits: antigo?.hits || 0,
+      lastHitAt: antigo?.lastHitAt || null,
+      lastHitIp: antigo?.lastHitIp || null,
+      lastHitDeviceId: antigo?.lastHitDeviceId || null,
+    };
+    this.modelBans.set(key, rec);
+    this._save(this.modelBansFile, this.modelBans);
+    return rec;
+  }
+
+  unbanModel(modelOrKey) {
+    const ban = this.modelBans.get(BanStore.normModel(modelOrKey));
+    if (!ban || !ban.active) return false;
+    ban.active = false;
+    ban.unbannedAt = nowSeconds();
+    this._save(this.modelBansFile, this.modelBans);
+    return true;
+  }
+
+  listModelBans(activeOnly = true) {
+    return [...this.modelBans.values()]
+      .filter((b) => !activeOnly || b.active)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  // Modelos já vistos nos fingerprints, agregados. query casa com "modelo" ou "plataforma modelo".
+  listModels(query = "") {
+    const q = BanStore.normModel(query);
+    const agg = new Map();
+    for (const rec of this.fingerprints.values()) {
+      const pid = String(rec.playerId);
+      for (const d of rec.devices || []) {
+        const key = BanStore.normModel(d.model);
+        if (!key) continue;
+        const plat = BanStore.normModel(d.platform);
+        if (q && !key.includes(q) && !`${plat} ${key}`.includes(q)) continue;
+
+        let a = agg.get(key);
+        if (!a) {
+          a = { key, model: String(d.model).trim(), platforms: new Set(), players: new Set(), devices: 0, lastSeen: 0 };
+          agg.set(key, a);
+        }
+        if (plat) a.platforms.add(plat);
+        a.players.add(pid);
+        a.devices++;
+        if ((d.lastSeen || 0) > a.lastSeen) {
+          a.lastSeen = d.lastSeen || 0;
+          a.model = String(d.model).trim();
+        }
+      }
+    }
+    return [...agg.values()]
+      .map((a) => ({
+        key: a.key,
+        model: a.model,
+        platforms: [...a.platforms],
+        players: a.players.size,
+        devices: a.devices,
+        lastSeen: a.lastSeen || null,
+        banned: !!this.modelBans.get(a.key)?.active,
+      }))
+      .sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0));
+  }
+
+  // Contas que já usaram um modelo. exact=true compara o modelo normalizado inteiro.
+  findPlayersByModel(model, { exact = true, platform = null } = {}) {
+    const q = BanStore.normModel(model);
+    const plat = platform ? BanStore.normModel(platform) : null;
+    if (!q) return [];
+    const out = [];
+    for (const rec of this.fingerprints.values()) {
+      const devices = (rec.devices || []).filter((d) => {
+        const k = BanStore.normModel(d.model);
+        if (!k || !(exact ? k === q : k.includes(q))) return false;
+        return !plat || BanStore.normModel(d.platform) === plat;
+      });
+      if (devices.length) out.push({ playerId: Number(rec.playerId), devices });
+    }
+    return out;
   }
 
   // Bane um player: coleta TODOS os dispositivos/ips já vistos dele
@@ -1496,6 +1632,11 @@ const jwtAuth = (req, res, next) => {
 
 app.use("/shop/dc/checkout", jwtAuth, bloquearMercadoPagoNaPlayStore(config, logger));
 
+const { QuestStore, registrarRotasMissoes } = require("./quests");
+const questStore = new QuestStore(authStore.db, config, logger, authStore);
+registrarRotasMissoes(app, { logger, questStore, store, serverAuth, jwtAuth, rateLimiter });
+setInterval(() => questStore.cleanup(), 6 * 3600 * 1000).unref();
+
 registrarRotasLoja(app, {
   config, logger, shopStore, authStore, jwtAuth, serverAuth, rateLimiter, onCredited,
 });
@@ -2181,27 +2322,42 @@ app.post("/stats/update", serverAuth, (req, res) => {
   }
 });
 
+// ===== XP =====
+const XP_MAX_POR_ENTRADA = 100000;
+const XP_MAX_ENTRADAS = 500;
+const XP_LOTE_TTL_SEG = 600;
+
+// batchId -> { at, body }. Um retry do mesmo lote (resposta perdida no caminho)
+// devolve a resposta original em vez de somar XP de novo.
+const _lotesXpProcessados = new Map();
+setInterval(() => {
+  const limite = nowSeconds() - XP_LOTE_TTL_SEG;
+  for (const [id, v] of _lotesXpProcessados) if (v.at < limite) _lotesXpProcessados.delete(id);
+}, 60 * 1000).unref();
+
+// Mesmo critério das missões: com xpOnlyOfficialServers, só "official" dá XP.
+function servidorGanhaXp(serverId) {
+  if (config.xpOnlyOfficialServers !== true) return true;
+  const s = store.getServer(serverId);
+  return !!s && s.serverType === "official";
+}
+
+// Avulso (admin/ferramentas). O gameplay usa o /stats/xp/batch.
 app.post("/stats/xp", serverAuth, (req, res) => {
-  const { playerId, xpAmount } = req.body;
+  const { playerId, xpAmount } = req.body || {};
 
-  const validation = validateRequired(["playerId", "xpAmount"], req.body);
-  if (validation) {
-    return res.status(400).json({ ok: false, error: validation });
+  if (!Number.isInteger(playerId) || playerId <= 0) {
+    return res.status(400).json({ ok: false, error: "playerId deve ser inteiro > 0" });
   }
-
-  const typeValidation = validateTypes(
-    { playerId: "number", xpAmount: "number" },
-    req.body,
-  );
-  if (typeValidation) {
-    return res.status(400).json({ ok: false, error: typeValidation });
+  if (!Number.isInteger(xpAmount) || xpAmount <= 0 || xpAmount > XP_MAX_POR_ENTRADA) {
+    return res.status(400).json({ ok: false, error: `xpAmount deve ser inteiro entre 1 e ${XP_MAX_POR_ENTRADA}` });
   }
 
   try {
-    const result = authStore.addXP(playerId, req.body.xpAmount);
+    const result = authStore.addXP(playerId, xpAmount);
     logger.info(
       `XP added for player ${playerId}: +${xpAmount}xp` +
-      (result.levelsGained > 0 ? ` | LEVEL UP x${result.levelsGained} -> level ${result.level}` : ""),
+        (result.levelsGained > 0 ? ` | LEVEL UP x${result.levelsGained} -> level ${result.level}` : ""),
     );
     res.json({ ok: true, ...result });
   } catch (error) {
@@ -2211,6 +2367,74 @@ app.post("/stats/xp", serverAuth, (req, res) => {
     logger.error("Add XP error:", error);
     res.status(500).json({ ok: false, error: "Internal server error" });
   }
+});
+
+/**
+ * Lote do servidor de partida: [{ accountId, xp }] já somado por conta.
+ * Uma transação para o lote todo. Conta inexistente é rejeitada sem derrubar o resto.
+ */
+app.post("/stats/xp/batch", serverAuth, (req, res) => {
+  const { serverId, batchId, entries } = req.body || {};
+
+  if (typeof serverId !== "string" || serverId.length === 0) {
+    return res.status(400).json({ ok: false, error: "serverId obrigatório" });
+  }
+  if (typeof batchId !== "string" || batchId.length === 0 || batchId.length > 64) {
+    return res.status(400).json({ ok: false, error: "batchId obrigatório (até 64 caracteres)" });
+  }
+  if (!Array.isArray(entries) || entries.length > XP_MAX_ENTRADAS) {
+    return res.status(400).json({ ok: false, error: `entries deve ser um array (máx. ${XP_MAX_ENTRADAS})` });
+  }
+  if (!servidorGanhaXp(serverId)) {
+    return res.status(403).json({ ok: false, error: "Servidor não concede XP" });
+  }
+
+  const chave = `${serverId}|${batchId}`;
+  const jaProcessado = _lotesXpProcessados.get(chave);
+  if (jaProcessado) return res.json(jaProcessado.body);
+
+  const results = [];
+  let rejected = 0;
+
+  try {
+    const tx = authStore.db.transaction(() => {
+      for (const e of entries) {
+        if (!e || !Number.isInteger(e.accountId) || e.accountId <= 0 || !Number.isInteger(e.xp) || e.xp <= 0) {
+          rejected++;
+          continue;
+        }
+
+        const xp = Math.min(e.xp, XP_MAX_POR_ENTRADA);
+        try {
+          const r = authStore.addXP(e.accountId, xp);
+          results.push({
+            accountId: e.accountId,
+            granted: xp,
+            level: r.level,
+            levelsGained: r.levelsGained,
+            xp: r.xp,
+            xpToNextLevel: r.xpToNextLevel,
+          });
+          if (r.levelsGained > 0) {
+            logger.info(`[XP] ${e.accountId} LEVEL UP x${r.levelsGained} -> ${r.level} (${serverId})`);
+          }
+        } catch (err) {
+          // addXP lança objetos ({status, message}) ANTES de escrever: seguro continuar.
+          rejected++;
+        }
+      }
+    });
+    tx();
+  } catch (error) {
+    logger.error("[XP] batch error:", error);
+    return res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+
+  const body = { ok: true, rejected, results };
+  _lotesXpProcessados.set(chave, { at: nowSeconds(), body });
+
+  if (rejected > 0) logger.debug(`[XP] ${serverId}: ${rejected} entradas rejeitadas`);
+  res.json(body);
 });
 
 // Intervalo de flush do game server é 60s. Aceitamos folga pra retry/atraso,
@@ -3238,8 +3462,9 @@ registrarRotasRoleta(app, { logger, rouletteStore, jwtAuth, serverAuth, rateLimi
 registrarRotasAdmin(app, {
   config, logger, store, authStore, banStore, pushStore, fcm,
   shopStore, googleShop, skinCatalog, playWatcher,
-  rateLimiter, encerrarAcesso, onCredited,rouletteStore,
+  rateLimiter, encerrarAcesso, onCredited, rouletteStore, questStore,
 });
+
 // ===== BACKGROUND JOBS =====
 function startBackgroundJobs() {
   setInterval(() => {

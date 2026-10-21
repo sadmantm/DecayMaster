@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const bcrypt = require("bcrypt");
 const { DC_PACKAGES, processPayment, findPaymentByOrderId } = require("./shop-dc");
 const { PLAY_PRODUCTS } = require("./shop-google");
+const { registrarRotasAdminMissoes } = require("./quests");
 
 function nowSeconds() {
   return Math.floor(Date.now() / 1000);
@@ -932,11 +933,105 @@ function registrarRotasRelatorios(app, r, adminAuth, wrap, ctx) {
   });
 }
 
+function registrarRotasBanDispositivo(app, r, adminAuth, wrap, ctx) {
+  const { db, banStore, encerrarAcesso, audit, logger } = ctx;
+  const bad = (res, msg, status = 400) => res.status(status).json({ ok: false, error: msg });
+
+  const contas = (ids) => {
+    const out = new Map();
+    for (let i = 0; i < ids.length; i += 500) {
+      const lote = ids.slice(i, i + 500);
+      if (!lote.length) continue;
+      db.prepare(
+        `SELECT playerId, playerName, accountType, email, level, createdAt
+         FROM accounts WHERE playerId IN (${lote.map(() => "?").join(",")})`,
+      ).all(...lote).forEach((a) => out.set(a.playerId, a));
+    }
+    return out;
+  };
+
+  // Modelos já vistos que casam com a busca
+  app.get(`${r}/devices/models`, adminAuth, wrap((req, res) => {
+    const q = String(req.query.q || "").trim();
+    if (q.length < 2) return bad(res, "Busca precisa de pelo menos 2 caracteres");
+    res.json({ ok: true, models: banStore.listModels(q).slice(0, 200) });
+  }));
+
+  // Contas que já usaram o modelo
+  app.get(`${r}/devices/search`, adminAuth, wrap((req, res) => {
+    const model = String(req.query.model || "").trim();
+    if (model.length < 2) return bad(res, "Informe o modelo (mín. 2 caracteres)");
+
+    const achados = banStore.findPlayersByModel(model, {
+      exact: req.query.exact === "1",
+      platform: req.query.platform || null,
+    });
+    const info = contas(achados.map((x) => x.playerId));
+    const rows = achados.map((x) => {
+      const a = info.get(x.playerId);
+      const ult = x.devices.reduce((m, d) => ((d.lastSeen || 0) > (m?.lastSeen || 0) ? d : m), null);
+      return {
+        playerId: x.playerId,
+        playerName: a?.playerName ?? null,
+        accountType: a?.accountType ?? null,
+        email: a?.email ?? null,
+        level: a?.level ?? null,
+        createdAt: a?.createdAt ?? null,
+        existe: !!a,
+        banned: !!banStore.isPlayerBanned(x.playerId),
+        devices: x.devices,
+        lastSeen: ult?.lastSeen || null,
+        lastIp: ult?.ip || null,
+      };
+    }).sort((p1, p2) => (p2.lastSeen || 0) - (p1.lastSeen || 0));
+
+    res.json({ ok: true, total: rows.length, rows: rows.slice(0, 500) });
+  }));
+
+  app.get(`${r}/bans/models`, adminAuth, wrap((req, res) => {
+    res.json({ ok: true, bans: banStore.listModelBans(req.query.all !== "1") });
+  }));
+
+  // Bane o modelo (bloqueia login e criação de conta) e, opcionalmente, todas as contas que já o usaram
+  app.post(`${r}/bans/models`, adminAuth, wrap((req, res) => {
+    const { model, platform, reason, banAccounts } = req.body || {};
+    if (typeof model !== "string") return bad(res, "model obrigatório");
+
+    const motivo = String(reason || "").trim() || "Modelo de dispositivo banido";
+    const ban = banStore.banModel(model, { platform: platform || null, reason: motivo, admin: "painel" });
+
+    let contasBanidas = 0, jaBanidas = 0;
+    const ids = [];
+    if (banAccounts !== false) {
+      for (const x of banStore.findPlayersByModel(ban.model, { exact: true, platform: ban.platform })) {
+        if (banStore.isPlayerBanned(x.playerId)) { jaBanidas++; continue; }
+        banStore.banPlayer(x.playerId, `${motivo} (${ban.model})`, "painel:modelo");
+        db.prepare(`DELETE FROM sessions WHERE playerId = ?`).run(x.playerId);
+        encerrarAcesso?.(x.playerId);
+        ids.push(x.playerId);
+        contasBanidas++;
+      }
+    }
+
+    audit(req, "ban.model", ban.model, { platform: ban.platform, reason: motivo, contasBanidas, jaBanidas, playerIds: ids.slice(0, 200) });
+    logger.warn(`[Admin] modelo banido: "${ban.model}"${ban.platform ? ` (${ban.platform})` : ""} · ${contasBanidas} conta(s) banida(s)`);
+    res.json({ ok: true, ban, contasBanidas, jaBanidas });
+  }));
+
+  // Remove o ban do modelo (as contas banidas continuam banidas)
+  app.delete(`${r}/bans/models/:key`, adminAuth, wrap((req, res) => {
+    const removido = banStore.unbanModel(req.params.key);
+    if (!removido) return bad(res, "Ban de modelo não encontrado ou já removido", 404);
+    audit(req, "ban.modelRemove", req.params.key);
+    res.json({ ok: true, removido });
+  }));
+}
+
 function registrarRotasAdmin(app, deps) {
   const {
     config, logger, store, authStore, banStore, pushStore, fcm,
     shopStore, googleShop, skinCatalog, playWatcher,
-    encerrarAcesso, onCredited, rouletteStore,
+    encerrarAcesso, onCredited, rouletteStore, questStore,
   } = deps;
 
   const db = authStore.db;
@@ -1628,6 +1723,8 @@ function registrarRotasAdmin(app, deps) {
     db, relogio, store, config, skinCatalog, logger,
   });
 
+  registrarRotasBanDispositivo(app, r, adminAuth, wrap, { db, banStore, encerrarAcesso, audit, logger });
+
   // ══════════════════════════════════════════════════════════════════════════
   // SKINS
   // ══════════════════════════════════════════════════════════════════════════
@@ -2084,7 +2181,13 @@ function registrarRotasAdmin(app, deps) {
     const total = db.prepare(`SELECT COUNT(*) c FROM admin_audit ${w}`).get(...params).c;
     res.json({ ok: true, rows, total });
   });
-
+  // MISSÕES
+  // ══════════════════════════════════════════════════════════════════════════
+  if (questStore) {
+    registrarRotasAdminMissoes(app, { logger, questStore, adminAuth, audit, prefix: r });
+  } else {
+    logger.warn("[Admin] questStore não informado — aba Missões indisponível.");
+  }
   logger.info("[Admin] Painel disponível em /admin — API em /admin/api");
 }
 

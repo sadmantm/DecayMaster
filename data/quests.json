@@ -1,0 +1,3180 @@
+{
+  "actions": {
+    "gather": 1,
+    "break_node": 2,
+    "pick_resource": 3,
+    "place_item": 4,
+    "build": 5,
+    "craft": 6,
+    "kill_player": 7,
+    "kill_animal": 8
+  },
+  "targets": {
+    "madeira": 47394,
+    "pedra": 46348,
+    "metal": 47500,
+    "enxofre": 47530,
+    "pano": 33786,
+    "frutinhas": 104592,
+    "machado_basico": 22956,
+    "picareta_basica": 224918,
+    "planta_construcao": 60876,
+    "martelo_construcao": 68270,
+    "porta_madeira": 70622,
+    "armario": 12174,
+    "bau": 35024,
+    "saco_dormir": 23072,
+    "fornalha": 114980,
+    "bancada_1": 194322,
+    "bancada_2": 194264,
+    "bancada_pesquisa": 194206,
+    "arma_prego": 28354,
+    "municao_pregos": 966524,
+    "desert_eagle": 387964,
+    "peca_fundacao": 1,
+    "peca_parede": 2,
+    "peca_teto": 3,
+    "peca_parede_com_porta": 4,
+    "peca_escada": 5,
+    "peca_escada_1": 6,
+    "peca_escada_2": 7,
+    "peca_fundacao_triangular": 8,
+    "peca_teto_triangular": 9,
+    "peca_meia_parede": 10,
+    "peca_parede_de_porta_dupla": 11,
+    "peca_janela": 12,
+    "animal_aranha": 1,
+    "animal_cobra": 2,
+    "animal_veado": 3
+  },
+  "rotation": {
+    "daily": 4,
+    "weekly": 3,
+    "monthly": 3
+  },
+  "categoryLabels": {
+    "initial": "Tutorial",
+    "daily": "Diárias",
+    "weekly": "Semanais",
+    "monthly": "Mensais"
+  },
+  "initialSequential": true,
+  "initialOnlyForAccountsCreatedAfter": 0,
+  "quests": [
+    {
+      "id": "ini_01_madeira_100",
+      "category": "initial",
+      "title": "Primeiros passos",
+      "description": "Colete 100 de madeira batendo em árvores",
+      "action": "gather",
+      "target": "madeira",
+      "amount": 100,
+      "rewards": [
+        {
+          "currency": "xp",
+          "amount": 20
+        }
+      ]
+    },
+    {
+      "id": "ini_02_node_madeira",
+      "category": "initial",
+      "title": "Derrubando a primeira árvore",
+      "description": "Derrube uma árvore por completo",
+      "action": "break_node",
+      "target": "madeira",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 100
+        },
+        {
+          "currency": "xp",
+          "amount": 30
+        }
+      ]
+    },
+    {
+      "id": "ini_03_craft_picareta",
+      "category": "initial",
+      "title": "Ferramenta de mineração",
+      "description": "Fabrique a picareta básica para minerar",
+      "action": "craft",
+      "target": "picareta_basica",
+      "amount": 1,
+      "rewards": [
+        {
+          "currency": "xp",
+          "amount": 30
+        }
+      ]
+    },
+    {
+      "id": "ini_04_pedra_100",
+      "category": "initial",
+      "title": "Pedra sobre pedra",
+      "description": "Use a picareta para coletar 100 de pedra",
+      "action": "gather",
+      "target": "pedra",
+      "amount": 100,
+      "rewards": [
+        {
+          "currency": "xp",
+          "amount": 30
+        }
+      ]
+    },
+    {
+      "id": "ini_05_node_pedra",
+      "category": "initial",
+      "title": "Quebrando pedra",
+      "description": "Extraia um node de pedra por completo",
+      "action": "break_node",
+      "target": "pedra",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 100
+        },
+        {
+          "currency": "xp",
+          "amount": 40
+        }
+      ]
+    },
+    {
+      "id": "ini_06_craft_machado",
+      "category": "initial",
+      "title": "Ferramenta de lenhador",
+      "description": "Fabrique um machado básico",
+      "action": "craft",
+      "target": "machado_basico",
+      "amount": 1,
+      "rewards": [
+        {
+          "currency": "xp",
+          "amount": 30
+        }
+      ]
+    },
+    {
+      "id": "ini_07_nodes_madeira_2",
+      "category": "initial",
+      "title": "Estoque de madeira",
+      "description": "Derrube 2 árvores usando o machado",
+      "action": "break_node",
+      "target": "madeira",
+      "amount": 2,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 200
+        },
+        {
+          "currency": "xp",
+          "amount": 40
+        }
+      ]
+    },
+    {
+      "id": "ini_08_recursos_3",
+      "category": "initial",
+      "title": "Sobrevivência básica",
+      "description": "Pegue 3 recursos do chão (ex: frutinhas)",
+      "action": "pick_resource",
+      "target": "*",
+      "amount": 3,
+      "rewards": [
+        {
+          "currency": "xp",
+          "amount": 30
+        }
+      ]
+    },
+    {
+      "id": "ini_09_craft_planta",
+      "category": "initial",
+      "title": "O projeto",
+      "description": "Fabrique uma planta de construção",
+      "action": "craft",
+      "target": "planta_construcao",
+      "amount": 1,
+      "rewards": [
+        {
+          "currency": "xp",
+          "amount": 30
+        }
+      ]
+    },
+    {
+      "id": "ini_10_craft_martelo",
+      "category": "initial",
+      "title": "Mãos à obra",
+      "description": "Fabrique um martelo de construção",
+      "action": "craft",
+      "target": "martelo_construcao",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 30
+        }
+      ]
+    },
+    {
+      "id": "ini_11_fundacoes_4",
+      "category": "initial",
+      "title": "Um lugar para chamar de seu",
+      "description": "Construa 4 fundações em um quadrado 2x2",
+      "action": "build",
+      "target": "peca_fundacao",
+      "amount": 4,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 400
+        },
+        {
+          "currency": "xp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "ini_12_paredes_7",
+      "category": "initial",
+      "title": "Erguendo paredes",
+      "description": "Construa 7 paredes deixando 1 vão livre",
+      "action": "build",
+      "target": "peca_parede",
+      "amount": 7,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "ini_13_parede_porta",
+      "category": "initial",
+      "title": "Entrada",
+      "description": "Construa 1 parede com porta no vão",
+      "action": "build",
+      "target": "peca_parede_com_porta",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 400
+        },
+        {
+          "currency": "xp",
+          "amount": 40
+        }
+      ]
+    },
+    {
+      "id": "ini_14_tetos_4",
+      "category": "initial",
+      "title": "Teto sobre a cabeça",
+      "description": "Construa 4 tetos para fechar a base",
+      "action": "build",
+      "target": "peca_teto",
+      "amount": 4,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "ini_15_craft_porta",
+      "category": "initial",
+      "title": "Trancando a casa",
+      "description": "Fabrique uma porta de madeira",
+      "action": "craft",
+      "target": "porta_madeira",
+      "amount": 1,
+      "rewards": [
+        {
+          "currency": "xp",
+          "amount": 30
+        }
+      ]
+    },
+    {
+      "id": "ini_16_place_porta",
+      "category": "initial",
+      "title": "Porta no lugar",
+      "description": "Coloque a porta na parede com porta",
+      "action": "place_item",
+      "target": "porta_madeira",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 40
+        }
+      ]
+    },
+    {
+      "id": "ini_17_craft_armario",
+      "category": "initial",
+      "title": "Reivindicando território",
+      "description": "Fabrique um armário de privilégio",
+      "action": "craft",
+      "target": "armario",
+      "amount": 1,
+      "rewards": [
+        {
+          "currency": "xp",
+          "amount": 30
+        }
+      ]
+    },
+    {
+      "id": "ini_18_place_armario",
+      "category": "initial",
+      "title": "Território",
+      "description": "Coloque o armário de privilégio na base",
+      "action": "place_item",
+      "target": "armario",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 200
+        },
+        {
+          "currency": "xp",
+          "amount": 100
+        }
+      ]
+    },
+    {
+      "id": "ini_19_nodes_madeira_3",
+      "category": "initial",
+      "title": "Lenhador de verdade",
+      "description": "Derrube 3 árvores por completo",
+      "action": "break_node",
+      "target": "madeira",
+      "amount": 3,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 200
+        },
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "ini_20_nodes_pedra_3",
+      "category": "initial",
+      "title": "Pedreiro",
+      "description": "Extraia 3 nodes de pedra por completo",
+      "action": "break_node",
+      "target": "pedra",
+      "amount": 3,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "ini_21_nodes_metal_3",
+      "category": "initial",
+      "title": "Veio de metal",
+      "description": "Extraia 3 nodes de metal por completo",
+      "action": "break_node",
+      "target": "metal",
+      "amount": 3,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 80
+        }
+      ]
+    },
+    {
+      "id": "ini_22_nodes_enxofre_3",
+      "category": "initial",
+      "title": "Cheiro de enxofre",
+      "description": "Extraia 3 nodes de enxofre por completo",
+      "action": "break_node",
+      "target": "enxofre",
+      "amount": 3,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 300
+        },
+        {
+          "item": "pedra",
+          "amount": 200
+        },
+        {
+          "currency": "xp",
+          "amount": 80
+        }
+      ]
+    },
+    {
+      "id": "ini_23_craft_fornalha",
+      "category": "initial",
+      "title": "Fogo e metal",
+      "description": "Fabrique uma fornalha",
+      "action": "craft",
+      "target": "fornalha",
+      "amount": 1,
+      "rewards": [
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "ini_24_place_fornalha",
+      "category": "initial",
+      "title": "Fundição caseira",
+      "description": "Coloque a fornalha dentro da base",
+      "action": "place_item",
+      "target": "fornalha",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 400
+        },
+        {
+          "currency": "xp",
+          "amount": 80
+        }
+      ]
+    },
+    {
+      "id": "ini_25_craft_bau",
+      "category": "initial",
+      "title": "Espaço para o saque",
+      "description": "Fabrique um baú grande",
+      "action": "craft",
+      "target": "bau",
+      "amount": 1,
+      "rewards": [
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "ini_26_place_bau",
+      "category": "initial",
+      "title": "Guardando o saque",
+      "description": "Coloque o baú grande dentro da base",
+      "action": "place_item",
+      "target": "bau",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 100
+        },
+        {
+          "currency": "ds",
+          "amount": 10
+        },
+        {
+          "currency": "xp",
+          "amount": 200
+        }
+      ]
+    },
+    {
+      "id": "d_madeira_600",
+      "category": "daily",
+      "title": "Lenhador",
+      "description": "Colete 600 de madeira",
+      "action": "gather",
+      "target": "madeira",
+      "amount": 600,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 150
+        },
+        {
+          "currency": "xp",
+          "amount": 40
+        }
+      ]
+    },
+    {
+      "id": "d_madeira_1500",
+      "category": "daily",
+      "title": "Motosserra humana",
+      "description": "Colete 1500 de madeira",
+      "action": "gather",
+      "target": "madeira",
+      "amount": 1500,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 400
+        },
+        {
+          "currency": "xp",
+          "amount": 80
+        }
+      ]
+    },
+    {
+      "id": "d_pedra_400",
+      "category": "daily",
+      "title": "Minerador",
+      "description": "Colete 400 de pedra",
+      "action": "gather",
+      "target": "pedra",
+      "amount": 400,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 40
+        }
+      ]
+    },
+    {
+      "id": "d_pedra_1200",
+      "category": "daily",
+      "title": "Britadeira",
+      "description": "Colete 1200 de pedra",
+      "action": "gather",
+      "target": "pedra",
+      "amount": 1200,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 800
+        },
+        {
+          "currency": "xp",
+          "amount": 80
+        }
+      ]
+    },
+    {
+      "id": "d_metal_150",
+      "category": "daily",
+      "title": "Garimpeiro",
+      "description": "Colete 150 de metal",
+      "action": "gather",
+      "target": "metal",
+      "amount": 150,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "d_metal_400",
+      "category": "daily",
+      "title": "Veia metálica",
+      "description": "Colete 400 de metal",
+      "action": "gather",
+      "target": "metal",
+      "amount": 400,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 800
+        },
+        {
+          "currency": "xp",
+          "amount": 100
+        }
+      ]
+    },
+    {
+      "id": "d_enxofre_150",
+      "category": "daily",
+      "title": "Alquimista",
+      "description": "Colete 150 de enxofre",
+      "action": "gather",
+      "target": "enxofre",
+      "amount": 150,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 50
+        },
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "d_enxofre_400",
+      "category": "daily",
+      "title": "Pólvora em potencial",
+      "description": "Colete 400 de enxofre",
+      "action": "gather",
+      "target": "enxofre",
+      "amount": 400,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 120
+        },
+        {
+          "currency": "xp",
+          "amount": 100
+        }
+      ]
+    },
+    {
+      "id": "d_nodes_madeira_5",
+      "category": "daily",
+      "title": "Clareira",
+      "description": "Derrube 5 árvores por completo",
+      "action": "break_node",
+      "target": "madeira",
+      "amount": 5,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 200
+        },
+        {
+          "currency": "xp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "d_nodes_pedra_4",
+      "category": "daily",
+      "title": "Rachando rochas",
+      "description": "Extraia 4 nodes de pedra por completo",
+      "action": "break_node",
+      "target": "pedra",
+      "amount": 4,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "d_nodes_metal_3",
+      "category": "daily",
+      "title": "Caçador de minério",
+      "description": "Extraia 3 nodes de metal por completo",
+      "action": "break_node",
+      "target": "metal",
+      "amount": 3,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 70
+        }
+      ]
+    },
+    {
+      "id": "d_nodes_enxofre_3",
+      "category": "daily",
+      "title": "Faro amarelo",
+      "description": "Extraia 3 nodes de enxofre por completo",
+      "action": "break_node",
+      "target": "enxofre",
+      "amount": 3,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 60
+        },
+        {
+          "currency": "xp",
+          "amount": 70
+        }
+      ]
+    },
+    {
+      "id": "d_nodes_8",
+      "category": "daily",
+      "title": "Quebra-tudo",
+      "description": "Extraia 8 nodes quaisquer",
+      "action": "break_node",
+      "target": "*",
+      "amount": 8,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 300
+        },
+        {
+          "item": "pedra",
+          "amount": 200
+        },
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "d_recursos_15",
+      "category": "daily",
+      "title": "Coletor",
+      "description": "Pegue 15 recursos do chão",
+      "action": "pick_resource",
+      "target": "*",
+      "amount": 15,
+      "rewards": [
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "d_pano_10",
+      "category": "daily",
+      "title": "Fibras naturais",
+      "description": "Pegue 10 pano do chão",
+      "action": "pick_resource",
+      "target": "pano",
+      "amount": 10,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 250
+        },
+        {
+          "currency": "xp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "d_frutinhas_10",
+      "category": "daily",
+      "title": "Café da manhã",
+      "description": "Pegue 10 frutinhas",
+      "action": "pick_resource",
+      "target": "frutinhas",
+      "amount": 10,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 200
+        },
+        {
+          "currency": "xp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "d_construir_10",
+      "category": "daily",
+      "title": "Mestre de obras",
+      "description": "Construa 10 peças quaisquer",
+      "action": "build",
+      "target": "*",
+      "amount": 10,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 400
+        },
+        {
+          "currency": "xp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "d_paredes_6",
+      "category": "daily",
+      "title": "Muralha",
+      "description": "Construa 6 paredes",
+      "action": "build",
+      "target": "peca_parede",
+      "amount": 6,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 250
+        },
+        {
+          "currency": "xp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "d_fundacoes_4",
+      "category": "daily",
+      "title": "Alicerce",
+      "description": "Construa 4 fundações",
+      "action": "build",
+      "target": "peca_fundacao",
+      "amount": 4,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 400
+        },
+        {
+          "currency": "xp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "d_tetos_4",
+      "category": "daily",
+      "title": "Cobertura",
+      "description": "Construa 4 tetos",
+      "action": "build",
+      "target": "peca_teto",
+      "amount": 4,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "d_triangulares_4",
+      "category": "daily",
+      "title": "Geometria de base",
+      "description": "Construa 4 fundações triangulares",
+      "action": "build",
+      "target": "peca_fundacao_triangular",
+      "amount": 4,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "d_janelas_2",
+      "category": "daily",
+      "title": "Vista privilegiada",
+      "description": "Construa 2 janelas",
+      "action": "build",
+      "target": "peca_janela",
+      "amount": 2,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "d_escada_1",
+      "category": "daily",
+      "title": "Segundo andar",
+      "description": "Construa 1 escada",
+      "action": "build",
+      "target": "peca_escada",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "d_craft_5",
+      "category": "daily",
+      "title": "Artesão",
+      "description": "Fabrique 5 itens quaisquer",
+      "action": "craft",
+      "target": "*",
+      "amount": 5,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "d_craft_portas_2",
+      "category": "daily",
+      "title": "Marceneiro",
+      "description": "Fabrique 2 portas de madeira",
+      "action": "craft",
+      "target": "porta_madeira",
+      "amount": 2,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "d_craft_municao_30",
+      "category": "daily",
+      "title": "Recarga",
+      "description": "Fabrique 30 munições de prego",
+      "action": "craft",
+      "target": "municao_pregos",
+      "amount": 30,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 60
+        },
+        {
+          "currency": "xp",
+          "amount": 70
+        }
+      ]
+    },
+    {
+      "id": "d_place_saco_dormir",
+      "category": "daily",
+      "title": "Plano B",
+      "description": "Coloque 1 saco de dormir",
+      "action": "place_item",
+      "target": "saco_dormir",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 200
+        },
+        {
+          "currency": "xp",
+          "amount": 40
+        }
+      ]
+    },
+    {
+      "id": "d_place_3",
+      "category": "daily",
+      "title": "Decorador",
+      "description": "Coloque 3 itens quaisquer no mundo",
+      "action": "place_item",
+      "target": "*",
+      "amount": 3,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 250
+        },
+        {
+          "currency": "xp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "d_kill_1",
+      "category": "daily",
+      "title": "Primeiro sangue",
+      "description": "Elimine 1 jogador",
+      "action": "kill_player",
+      "target": "*",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "municao_pregos",
+          "amount": 20
+        },
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "d_kill_3",
+      "category": "daily",
+      "title": "Caçador",
+      "description": "Elimine 3 jogadores",
+      "action": "kill_player",
+      "target": "*",
+      "amount": 3,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 150
+        },
+        {
+          "item": "municao_pregos",
+          "amount": 30
+        },
+        {
+          "currency": "xp",
+          "amount": 120
+        }
+      ]
+    },
+    {
+      "id": "d_kill_5",
+      "category": "daily",
+      "title": "Predador",
+      "description": "Elimine 5 jogadores",
+      "action": "kill_player",
+      "target": "*",
+      "amount": 5,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 250
+        },
+        {
+          "item": "enxofre",
+          "amount": 150
+        },
+        {
+          "currency": "xp",
+          "amount": 180
+        }
+      ]
+    },
+    {
+      "id": "w_madeira_5000",
+      "category": "weekly",
+      "title": "Serraria",
+      "description": "Colete 5000 de madeira",
+      "action": "gather",
+      "target": "madeira",
+      "amount": 5000,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 200
+        },
+        {
+          "currency": "xp",
+          "amount": 250
+        }
+      ]
+    },
+    {
+      "id": "w_pedra_4000",
+      "category": "weekly",
+      "title": "Pedreira",
+      "description": "Colete 4000 de pedra",
+      "action": "gather",
+      "target": "pedra",
+      "amount": 4000,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 200
+        },
+        {
+          "currency": "xp",
+          "amount": 250
+        }
+      ]
+    },
+    {
+      "id": "w_metal_1500",
+      "category": "weekly",
+      "title": "Mina de ferro",
+      "description": "Colete 1500 de metal",
+      "action": "gather",
+      "target": "metal",
+      "amount": 1500,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 300
+        },
+        {
+          "currency": "ds",
+          "amount": 5
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_enxofre_1500",
+      "category": "weekly",
+      "title": "Minas sulfúricas",
+      "description": "Colete 1500 de enxofre",
+      "action": "gather",
+      "target": "enxofre",
+      "amount": 1500,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 300
+        },
+        {
+          "currency": "ds",
+          "amount": 5
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_nodes_40",
+      "category": "weekly",
+      "title": "Desmatamento",
+      "description": "Extraia 40 nodes quaisquer",
+      "action": "break_node",
+      "target": "*",
+      "amount": 40,
+      "rewards": [
+        {
+          "currency": "ds",
+          "amount": 10
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_nodes_metal_20",
+      "category": "weekly",
+      "title": "Prospector",
+      "description": "Extraia 20 nodes de metal por completo",
+      "action": "break_node",
+      "target": "metal",
+      "amount": 20,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 1500
+        },
+        {
+          "currency": "ds",
+          "amount": 5
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_nodes_enxofre_20",
+      "category": "weekly",
+      "title": "Rota do enxofre",
+      "description": "Extraia 20 nodes de enxofre por completo",
+      "action": "break_node",
+      "target": "enxofre",
+      "amount": 20,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 400
+        },
+        {
+          "currency": "ds",
+          "amount": 5
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_nodes_madeira_30",
+      "category": "weekly",
+      "title": "Floresta abaixo",
+      "description": "Derrube 30 árvores por completo",
+      "action": "break_node",
+      "target": "madeira",
+      "amount": 30,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 1200
+        },
+        {
+          "currency": "xp",
+          "amount": 250
+        }
+      ]
+    },
+    {
+      "id": "w_recursos_100",
+      "category": "weekly",
+      "title": "Forrageador",
+      "description": "Pegue 100 recursos do chão",
+      "action": "pick_resource",
+      "target": "*",
+      "amount": 100,
+      "rewards": [
+        {
+          "currency": "xp",
+          "amount": 400
+        }
+      ]
+    },
+    {
+      "id": "w_pano_60",
+      "category": "weekly",
+      "title": "Tecelão",
+      "description": "Pegue 60 pano do chão",
+      "action": "pick_resource",
+      "target": "pano",
+      "amount": 60,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 150
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_frutinhas_60",
+      "category": "weekly",
+      "title": "Pomar selvagem",
+      "description": "Pegue 60 frutinhas",
+      "action": "pick_resource",
+      "target": "frutinhas",
+      "amount": 60,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 1500
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_fundacoes_20",
+      "category": "weekly",
+      "title": "Expansão",
+      "description": "Construa 20 fundações",
+      "action": "build",
+      "target": "peca_fundacao",
+      "amount": 20,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 1500
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_paredes_40",
+      "category": "weekly",
+      "title": "Grande muralha",
+      "description": "Construa 40 paredes",
+      "action": "build",
+      "target": "peca_parede",
+      "amount": 40,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 1500
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_tetos_20",
+      "category": "weekly",
+      "title": "Andares",
+      "description": "Construa 20 tetos",
+      "action": "build",
+      "target": "peca_teto",
+      "amount": 20,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 1500
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_construir_80",
+      "category": "weekly",
+      "title": "Construtora",
+      "description": "Construa 80 peças quaisquer",
+      "action": "build",
+      "target": "*",
+      "amount": 80,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 250
+        },
+        {
+          "currency": "ds",
+          "amount": 10
+        },
+        {
+          "currency": "xp",
+          "amount": 350
+        }
+      ]
+    },
+    {
+      "id": "w_portas_duplas_3",
+      "category": "weekly",
+      "title": "Garagem",
+      "description": "Construa 3 paredes de porta dupla",
+      "action": "build",
+      "target": "peca_parede_de_porta_dupla",
+      "amount": 3,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 1200
+        },
+        {
+          "currency": "xp",
+          "amount": 250
+        }
+      ]
+    },
+    {
+      "id": "w_meias_paredes_10",
+      "category": "weekly",
+      "title": "Parapeito",
+      "description": "Construa 10 meias paredes",
+      "action": "build",
+      "target": "peca_meia_parede",
+      "amount": 10,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 1000
+        },
+        {
+          "currency": "xp",
+          "amount": 250
+        }
+      ]
+    },
+    {
+      "id": "w_craft_30",
+      "category": "weekly",
+      "title": "Oficina",
+      "description": "Fabrique 30 itens quaisquer",
+      "action": "craft",
+      "target": "*",
+      "amount": 30,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 200
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_craft_municao_200",
+      "category": "weekly",
+      "title": "Paiol",
+      "description": "Fabrique 200 munições de prego",
+      "action": "craft",
+      "target": "municao_pregos",
+      "amount": 200,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 300
+        },
+        {
+          "currency": "ds",
+          "amount": 5
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_craft_arma_prego",
+      "category": "weekly",
+      "title": "Armado e perigoso",
+      "description": "Fabrique 1 arma de prego",
+      "action": "craft",
+      "target": "arma_prego",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "municao_pregos",
+          "amount": 50
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_craft_bancada_pesquisa",
+      "category": "weekly",
+      "title": "Cientista",
+      "description": "Fabrique 1 bancada de pesquisa",
+      "action": "craft",
+      "target": "bancada_pesquisa",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 250
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_place_bau_3",
+      "category": "weekly",
+      "title": "Armazém",
+      "description": "Coloque 3 baús grandes",
+      "action": "place_item",
+      "target": "bau",
+      "amount": 3,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 1500
+        },
+        {
+          "currency": "xp",
+          "amount": 250
+        }
+      ]
+    },
+    {
+      "id": "w_place_fornalha_2",
+      "category": "weekly",
+      "title": "Linha de fundição",
+      "description": "Coloque 2 fornalhas",
+      "action": "place_item",
+      "target": "fornalha",
+      "amount": 2,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_place_saco_dormir_4",
+      "category": "weekly",
+      "title": "Rede de spawns",
+      "description": "Coloque 4 sacos de dormir",
+      "action": "place_item",
+      "target": "saco_dormir",
+      "amount": 4,
+      "rewards": [
+        {
+          "item": "pano",
+          "amount": 30
+        },
+        {
+          "currency": "xp",
+          "amount": 250
+        }
+      ]
+    },
+    {
+      "id": "w_kill_10",
+      "category": "weekly",
+      "title": "Ameaça regional",
+      "description": "Elimine 10 jogadores",
+      "action": "kill_player",
+      "target": "*",
+      "amount": 10,
+      "rewards": [
+        {
+          "item": "municao_pregos",
+          "amount": 100
+        },
+        {
+          "item": "metal",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 350
+        }
+      ]
+    },
+    {
+      "id": "w_kill_25",
+      "category": "weekly",
+      "title": "Terror da ilha",
+      "description": "Elimine 25 jogadores",
+      "action": "kill_player",
+      "target": "*",
+      "amount": 25,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 500
+        },
+        {
+          "currency": "ds",
+          "amount": 10
+        },
+        {
+          "currency": "xp",
+          "amount": 500
+        }
+      ]
+    },
+    {
+      "id": "w_kill_50",
+      "category": "weekly",
+      "title": "Senhor da guerra",
+      "description": "Elimine 50 jogadores",
+      "action": "kill_player",
+      "target": "*",
+      "amount": 50,
+      "rewards": [
+        {
+          "item": "arma_prego",
+          "amount": 1
+        },
+        {
+          "currency": "ds",
+          "amount": 15
+        },
+        {
+          "currency": "xp",
+          "amount": 800
+        }
+      ]
+    },
+    {
+      "id": "m_madeira_30000",
+      "category": "monthly",
+      "title": "Madeireira",
+      "description": "Colete 30000 de madeira",
+      "action": "gather",
+      "target": "madeira",
+      "amount": 30000,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 1000
+        },
+        {
+          "currency": "ds",
+          "amount": 30
+        },
+        {
+          "currency": "xp",
+          "amount": 1000
+        }
+      ]
+    },
+    {
+      "id": "m_pedra_25000",
+      "category": "monthly",
+      "title": "Império de pedra",
+      "description": "Colete 25000 de pedra",
+      "action": "gather",
+      "target": "pedra",
+      "amount": 25000,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 1000
+        },
+        {
+          "currency": "ds",
+          "amount": 30
+        },
+        {
+          "currency": "xp",
+          "amount": 1000
+        }
+      ]
+    },
+    {
+      "id": "m_metal_8000",
+      "category": "monthly",
+      "title": "Fundição",
+      "description": "Colete 8000 de metal",
+      "action": "gather",
+      "target": "metal",
+      "amount": 8000,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 1500
+        },
+        {
+          "currency": "ds",
+          "amount": 40
+        },
+        {
+          "currency": "xp",
+          "amount": 1200
+        }
+      ]
+    },
+    {
+      "id": "m_enxofre_8000",
+      "category": "monthly",
+      "title": "Barão do enxofre",
+      "description": "Colete 8000 de enxofre",
+      "action": "gather",
+      "target": "enxofre",
+      "amount": 8000,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 1500
+        },
+        {
+          "currency": "ds",
+          "amount": 40
+        },
+        {
+          "currency": "xp",
+          "amount": 1200
+        }
+      ]
+    },
+    {
+      "id": "m_nodes_250",
+      "category": "monthly",
+      "title": "Força da natureza",
+      "description": "Extraia 250 nodes quaisquer",
+      "action": "break_node",
+      "target": "*",
+      "amount": 250,
+      "rewards": [
+        {
+          "currency": "ds",
+          "amount": 40
+        },
+        {
+          "currency": "xp",
+          "amount": 1000
+        }
+      ]
+    },
+    {
+      "id": "m_nodes_metal_100",
+      "category": "monthly",
+      "title": "Coração de ferro",
+      "description": "Extraia 100 nodes de metal por completo",
+      "action": "break_node",
+      "target": "metal",
+      "amount": 100,
+      "rewards": [
+        {
+          "item": "municao_pregos",
+          "amount": 200
+        },
+        {
+          "currency": "ds",
+          "amount": 35
+        },
+        {
+          "currency": "xp",
+          "amount": 1200
+        }
+      ]
+    },
+    {
+      "id": "m_nodes_enxofre_100",
+      "category": "monthly",
+      "title": "Explosivo",
+      "description": "Extraia 100 nodes de enxofre por completo",
+      "action": "break_node",
+      "target": "enxofre",
+      "amount": 100,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 2000
+        },
+        {
+          "currency": "ds",
+          "amount": 35
+        },
+        {
+          "currency": "xp",
+          "amount": 1200
+        }
+      ]
+    },
+    {
+      "id": "m_recursos_500",
+      "category": "monthly",
+      "title": "Senhor da colheita",
+      "description": "Pegue 500 recursos do chão",
+      "action": "pick_resource",
+      "target": "*",
+      "amount": 500,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 800
+        },
+        {
+          "currency": "ds",
+          "amount": 25
+        },
+        {
+          "currency": "xp",
+          "amount": 1000
+        }
+      ]
+    },
+    {
+      "id": "m_construir_300",
+      "category": "monthly",
+      "title": "Fortaleza",
+      "description": "Construa 300 peças quaisquer",
+      "action": "build",
+      "target": "*",
+      "amount": 300,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 1000
+        },
+        {
+          "currency": "ds",
+          "amount": 40
+        },
+        {
+          "currency": "xp",
+          "amount": 1200
+        }
+      ]
+    },
+    {
+      "id": "m_fundacoes_100",
+      "category": "monthly",
+      "title": "Complexo",
+      "description": "Construa 100 fundações",
+      "action": "build",
+      "target": "peca_fundacao",
+      "amount": 100,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 8000
+        },
+        {
+          "currency": "ds",
+          "amount": 30
+        },
+        {
+          "currency": "xp",
+          "amount": 1000
+        }
+      ]
+    },
+    {
+      "id": "m_craft_150",
+      "category": "monthly",
+      "title": "Indústria",
+      "description": "Fabrique 150 itens quaisquer",
+      "action": "craft",
+      "target": "*",
+      "amount": 150,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 1200
+        },
+        {
+          "currency": "ds",
+          "amount": 35
+        },
+        {
+          "currency": "xp",
+          "amount": 1200
+        }
+      ]
+    },
+    {
+      "id": "m_craft_municao_1000",
+      "category": "monthly",
+      "title": "Arsenal",
+      "description": "Fabrique 1000 munições de prego",
+      "action": "craft",
+      "target": "municao_pregos",
+      "amount": 1000,
+      "rewards": [
+        {
+          "item": "arma_prego",
+          "amount": 1
+        },
+        {
+          "currency": "ds",
+          "amount": 40
+        },
+        {
+          "currency": "xp",
+          "amount": 1200
+        }
+      ]
+    },
+    {
+      "id": "m_craft_bancada_2",
+      "category": "monthly",
+      "title": "Tecnologia avançada",
+      "description": "Fabrique 1 bancada nível 2",
+      "action": "craft",
+      "target": "bancada_2",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 1500
+        },
+        {
+          "currency": "ds",
+          "amount": 30
+        },
+        {
+          "currency": "xp",
+          "amount": 1000
+        }
+      ]
+    },
+    {
+      "id": "m_craft_desert_eagle",
+      "category": "monthly",
+      "title": "Calibre pesado",
+      "description": "Fabrique 1 Desert Eagle",
+      "action": "craft",
+      "target": "desert_eagle",
+      "amount": 1,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 2000
+        },
+        {
+          "currency": "ds",
+          "amount": 50
+        },
+        {
+          "currency": "xp",
+          "amount": 1500
+        }
+      ]
+    },
+    {
+      "id": "m_place_bau_15",
+      "category": "monthly",
+      "title": "Cofre do clã",
+      "description": "Coloque 15 baús grandes",
+      "action": "place_item",
+      "target": "bau",
+      "amount": 15,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 8000
+        },
+        {
+          "currency": "ds",
+          "amount": 25
+        },
+        {
+          "currency": "xp",
+          "amount": 1000
+        }
+      ]
+    },
+    {
+      "id": "m_place_fornalha_8",
+      "category": "monthly",
+      "title": "Siderúrgica",
+      "description": "Coloque 8 fornalhas",
+      "action": "place_item",
+      "target": "fornalha",
+      "amount": 8,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 1500
+        },
+        {
+          "currency": "ds",
+          "amount": 30
+        },
+        {
+          "currency": "xp",
+          "amount": 1000
+        }
+      ]
+    },
+    {
+      "id": "m_kill_100",
+      "category": "monthly",
+      "title": "Lenda do PvP",
+      "description": "Elimine 100 jogadores",
+      "action": "kill_player",
+      "target": "*",
+      "amount": 100,
+      "rewards": [
+        {
+          "item": "municao_pregos",
+          "amount": 400
+        },
+        {
+          "currency": "ds",
+          "amount": 40
+        },
+        {
+          "currency": "xp",
+          "amount": 1500
+        }
+      ]
+    },
+    {
+      "id": "m_kill_250",
+      "category": "monthly",
+      "title": "Ceifador",
+      "description": "Elimine 250 jogadores",
+      "action": "kill_player",
+      "target": "*",
+      "amount": 250,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 3000
+        },
+        {
+          "currency": "ds",
+          "amount": 60
+        },
+        {
+          "currency": "xp",
+          "amount": 2500
+        }
+      ]
+    },
+    {
+      "id": "d_aranha_3",
+      "category": "daily",
+      "title": "Dedetização",
+      "description": "Elimine 3 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 3,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 50
+        },
+        {
+          "currency": "xp",
+          "amount": 40
+        }
+      ]
+    },
+    {
+      "id": "d_aranha_5",
+      "category": "daily",
+      "title": "Teia desfeita",
+      "description": "Elimine 5 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 5,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 80
+        },
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "d_aranha_10",
+      "category": "daily",
+      "title": "Aracnofobia",
+      "description": "Elimine 10 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 10,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 80
+        },
+        {
+          "currency": "xp",
+          "amount": 80
+        }
+      ]
+    },
+    {
+      "id": "d_aranha_15",
+      "category": "daily",
+      "title": "Oito patas a menos",
+      "description": "Elimine 15 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 15,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 150
+        },
+        {
+          "currency": "xp",
+          "amount": 110
+        }
+      ]
+    },
+    {
+      "id": "d_aranha_25",
+      "category": "daily",
+      "title": "Exterminador",
+      "description": "Elimine 25 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 25,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 200
+        },
+        {
+          "currency": "xp",
+          "amount": 150
+        }
+      ]
+    },
+    {
+      "id": "d_cobra_3",
+      "category": "daily",
+      "title": "Olha onde pisa",
+      "description": "Elimine 3 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 3,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 40
+        },
+        {
+          "currency": "xp",
+          "amount": 40
+        }
+      ]
+    },
+    {
+      "id": "d_cobra_5",
+      "category": "daily",
+      "title": "Antídoto",
+      "description": "Elimine 5 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 5,
+      "rewards": [
+        {
+          "item": "municao_pregos",
+          "amount": 20
+        },
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "d_cobra_8",
+      "category": "daily",
+      "title": "Sem veneno",
+      "description": "Elimine 8 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 8,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 80
+        },
+        {
+          "currency": "xp",
+          "amount": 80
+        }
+      ]
+    },
+    {
+      "id": "d_cobra_12",
+      "category": "daily",
+      "title": "Encantador de serpentes",
+      "description": "Elimine 12 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 12,
+      "rewards": [
+        {
+          "item": "municao_pregos",
+          "amount": 40
+        },
+        {
+          "currency": "xp",
+          "amount": 110
+        }
+      ]
+    },
+    {
+      "id": "d_cobra_20",
+      "category": "daily",
+      "title": "Mangusto",
+      "description": "Elimine 20 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 20,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 150
+        },
+        {
+          "currency": "xp",
+          "amount": 150
+        }
+      ]
+    },
+    {
+      "id": "d_veado_2",
+      "category": "daily",
+      "title": "Caçada matinal",
+      "description": "Cace 2 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 2,
+      "rewards": [
+        {
+          "item": "pano",
+          "amount": 5
+        },
+        {
+          "currency": "xp",
+          "amount": 40
+        }
+      ]
+    },
+    {
+      "id": "d_veado_3",
+      "category": "daily",
+      "title": "Pés ligeiros",
+      "description": "Cace 3 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 3,
+      "rewards": [
+        {
+          "item": "pano",
+          "amount": 8
+        },
+        {
+          "currency": "xp",
+          "amount": 60
+        }
+      ]
+    },
+    {
+      "id": "d_veado_5",
+      "category": "daily",
+      "title": "Jantar garantido",
+      "description": "Cace 5 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 5,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 400
+        },
+        {
+          "currency": "xp",
+          "amount": 80
+        }
+      ]
+    },
+    {
+      "id": "d_veado_8",
+      "category": "daily",
+      "title": "Rastreador",
+      "description": "Cace 8 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 8,
+      "rewards": [
+        {
+          "item": "pano",
+          "amount": 15
+        },
+        {
+          "currency": "xp",
+          "amount": 110
+        }
+      ]
+    },
+    {
+      "id": "d_veado_12",
+      "category": "daily",
+      "title": "Mira certeira",
+      "description": "Cace 12 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 12,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 600
+        },
+        {
+          "currency": "xp",
+          "amount": 150
+        }
+      ]
+    },
+    {
+      "id": "d_animais_10",
+      "category": "daily",
+      "title": "Safári",
+      "description": "Cace 10 animais quaisquer",
+      "action": "kill_animal",
+      "target": "*",
+      "amount": 10,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 300
+        },
+        {
+          "item": "pedra",
+          "amount": 200
+        },
+        {
+          "currency": "xp",
+          "amount": 80
+        }
+      ]
+    },
+    {
+      "id": "d_animais_30",
+      "category": "daily",
+      "title": "Vida selvagem",
+      "description": "Cace 30 animais quaisquer",
+      "action": "kill_animal",
+      "target": "*",
+      "amount": 30,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 150
+        },
+        {
+          "item": "municao_pregos",
+          "amount": 30
+        },
+        {
+          "currency": "xp",
+          "amount": 150
+        }
+      ]
+    },
+    {
+      "id": "w_aranha_30",
+      "category": "weekly",
+      "title": "Caça-aranhas",
+      "description": "Elimine 30 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 30,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 250
+        }
+      ]
+    },
+    {
+      "id": "w_aranha_50",
+      "category": "weekly",
+      "title": "Ninho limpo",
+      "description": "Elimine 50 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 50,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 300
+        },
+        {
+          "currency": "ds",
+          "amount": 5
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_aranha_80",
+      "category": "weekly",
+      "title": "Fim das teias",
+      "description": "Elimine 80 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 80,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 500
+        },
+        {
+          "currency": "ds",
+          "amount": 5
+        },
+        {
+          "currency": "xp",
+          "amount": 380
+        }
+      ]
+    },
+    {
+      "id": "w_aranha_120",
+      "category": "weekly",
+      "title": "Pesadelo aracnídeo",
+      "description": "Elimine 120 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 120,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 500
+        },
+        {
+          "currency": "ds",
+          "amount": 10
+        },
+        {
+          "currency": "xp",
+          "amount": 480
+        }
+      ]
+    },
+    {
+      "id": "w_aranha_200",
+      "category": "weekly",
+      "title": "Matador de colônias",
+      "description": "Elimine 200 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 200,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 800
+        },
+        {
+          "currency": "ds",
+          "amount": 15
+        },
+        {
+          "currency": "xp",
+          "amount": 650
+        }
+      ]
+    },
+    {
+      "id": "w_cobra_25",
+      "category": "weekly",
+      "title": "Caçador de serpentes",
+      "description": "Elimine 25 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 25,
+      "rewards": [
+        {
+          "item": "municao_pregos",
+          "amount": 60
+        },
+        {
+          "currency": "xp",
+          "amount": 250
+        }
+      ]
+    },
+    {
+      "id": "w_cobra_40",
+      "category": "weekly",
+      "title": "Botas de couro de cobra",
+      "description": "Elimine 40 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 40,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 250
+        },
+        {
+          "currency": "ds",
+          "amount": 5
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_cobra_70",
+      "category": "weekly",
+      "title": "Ninho de víboras",
+      "description": "Elimine 70 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 70,
+      "rewards": [
+        {
+          "item": "municao_pregos",
+          "amount": 100
+        },
+        {
+          "currency": "ds",
+          "amount": 5
+        },
+        {
+          "currency": "xp",
+          "amount": 380
+        }
+      ]
+    },
+    {
+      "id": "w_cobra_100",
+      "category": "weekly",
+      "title": "Presas quebradas",
+      "description": "Elimine 100 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 100,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 400
+        },
+        {
+          "currency": "ds",
+          "amount": 10
+        },
+        {
+          "currency": "xp",
+          "amount": 480
+        }
+      ]
+    },
+    {
+      "id": "w_cobra_150",
+      "category": "weekly",
+      "title": "Matador de serpentes",
+      "description": "Elimine 150 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 150,
+      "rewards": [
+        {
+          "item": "arma_prego",
+          "amount": 1
+        },
+        {
+          "currency": "ds",
+          "amount": 15
+        },
+        {
+          "currency": "xp",
+          "amount": 650
+        }
+      ]
+    },
+    {
+      "id": "w_veado_15",
+      "category": "weekly",
+      "title": "Temporada de caça",
+      "description": "Cace 15 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 15,
+      "rewards": [
+        {
+          "item": "pano",
+          "amount": 30
+        },
+        {
+          "currency": "xp",
+          "amount": 250
+        }
+      ]
+    },
+    {
+      "id": "w_veado_25",
+      "category": "weekly",
+      "title": "Despensa cheia",
+      "description": "Cace 25 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 25,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 1500
+        },
+        {
+          "currency": "ds",
+          "amount": 5
+        },
+        {
+          "currency": "xp",
+          "amount": 300
+        }
+      ]
+    },
+    {
+      "id": "w_veado_40",
+      "category": "weekly",
+      "title": "Corredor da floresta",
+      "description": "Cace 40 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 40,
+      "rewards": [
+        {
+          "item": "pano",
+          "amount": 50
+        },
+        {
+          "currency": "ds",
+          "amount": 5
+        },
+        {
+          "currency": "xp",
+          "amount": 380
+        }
+      ]
+    },
+    {
+      "id": "w_veado_60",
+      "category": "weekly",
+      "title": "Caçador furtivo",
+      "description": "Cace 60 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 60,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 2000
+        },
+        {
+          "currency": "ds",
+          "amount": 10
+        },
+        {
+          "currency": "xp",
+          "amount": 480
+        }
+      ]
+    },
+    {
+      "id": "w_veado_90",
+      "category": "weekly",
+      "title": "Ninguém escapa",
+      "description": "Cace 90 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 90,
+      "rewards": [
+        {
+          "item": "pano",
+          "amount": 80
+        },
+        {
+          "currency": "ds",
+          "amount": 15
+        },
+        {
+          "currency": "xp",
+          "amount": 650
+        }
+      ]
+    },
+    {
+      "id": "w_animais_100",
+      "category": "weekly",
+      "title": "Caçador de feras",
+      "description": "Cace 100 animais quaisquer",
+      "action": "kill_animal",
+      "target": "*",
+      "amount": 100,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 400
+        },
+        {
+          "currency": "ds",
+          "amount": 10
+        },
+        {
+          "currency": "xp",
+          "amount": 400
+        }
+      ]
+    },
+    {
+      "id": "w_animais_250",
+      "category": "weekly",
+      "title": "Cadeia alimentar",
+      "description": "Cace 250 animais quaisquer",
+      "action": "kill_animal",
+      "target": "*",
+      "amount": 250,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 800
+        },
+        {
+          "currency": "ds",
+          "amount": 15
+        },
+        {
+          "currency": "xp",
+          "amount": 700
+        }
+      ]
+    },
+    {
+      "id": "m_aranha_150",
+      "category": "monthly",
+      "title": "Controle de pragas",
+      "description": "Elimine 150 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 150,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 1500
+        },
+        {
+          "currency": "ds",
+          "amount": 25
+        },
+        {
+          "currency": "xp",
+          "amount": 1000
+        }
+      ]
+    },
+    {
+      "id": "m_aranha_300",
+      "category": "monthly",
+      "title": "Ilha sem teias",
+      "description": "Elimine 300 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 300,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 1500
+        },
+        {
+          "currency": "ds",
+          "amount": 30
+        },
+        {
+          "currency": "xp",
+          "amount": 1200
+        }
+      ]
+    },
+    {
+      "id": "m_aranha_500",
+      "category": "monthly",
+      "title": "Caçador de aracnídeos",
+      "description": "Elimine 500 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 500,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 2500
+        },
+        {
+          "currency": "ds",
+          "amount": 40
+        },
+        {
+          "currency": "xp",
+          "amount": 1500
+        }
+      ]
+    },
+    {
+      "id": "m_aranha_800",
+      "category": "monthly",
+      "title": "Flagelo das aranhas",
+      "description": "Elimine 800 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 800,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 2500
+        },
+        {
+          "currency": "ds",
+          "amount": 50
+        },
+        {
+          "currency": "xp",
+          "amount": 2000
+        }
+      ]
+    },
+    {
+      "id": "m_aranha_1200",
+      "category": "monthly",
+      "title": "Extinção aracnídea",
+      "description": "Elimine 1200 aranhas",
+      "action": "kill_animal",
+      "target": "animal_aranha",
+      "amount": 1200,
+      "rewards": [
+        {
+          "item": "enxofre",
+          "amount": 4000
+        },
+        {
+          "currency": "ds",
+          "amount": 60
+        },
+        {
+          "currency": "xp",
+          "amount": 2500
+        }
+      ]
+    },
+    {
+      "id": "m_cobra_120",
+      "category": "monthly",
+      "title": "Herpetólogo",
+      "description": "Elimine 120 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 120,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 1200
+        },
+        {
+          "currency": "ds",
+          "amount": 25
+        },
+        {
+          "currency": "xp",
+          "amount": 1000
+        }
+      ]
+    },
+    {
+      "id": "m_cobra_250",
+      "category": "monthly",
+      "title": "Terra sem cobras",
+      "description": "Elimine 250 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 250,
+      "rewards": [
+        {
+          "item": "municao_pregos",
+          "amount": 300
+        },
+        {
+          "currency": "ds",
+          "amount": 30
+        },
+        {
+          "currency": "xp",
+          "amount": 1200
+        }
+      ]
+    },
+    {
+      "id": "m_cobra_400",
+      "category": "monthly",
+      "title": "Imune ao veneno",
+      "description": "Elimine 400 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 400,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 2000
+        },
+        {
+          "currency": "ds",
+          "amount": 40
+        },
+        {
+          "currency": "xp",
+          "amount": 1500
+        }
+      ]
+    },
+    {
+      "id": "m_cobra_600",
+      "category": "monthly",
+      "title": "Flagelo das serpentes",
+      "description": "Elimine 600 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 600,
+      "rewards": [
+        {
+          "item": "municao_pregos",
+          "amount": 500
+        },
+        {
+          "currency": "ds",
+          "amount": 50
+        },
+        {
+          "currency": "xp",
+          "amount": 2000
+        }
+      ]
+    },
+    {
+      "id": "m_cobra_1000",
+      "category": "monthly",
+      "title": "São Patrício",
+      "description": "Elimine 1000 cobras",
+      "action": "kill_animal",
+      "target": "animal_cobra",
+      "amount": 1000,
+      "rewards": [
+        {
+          "item": "arma_prego",
+          "amount": 1
+        },
+        {
+          "item": "municao_pregos",
+          "amount": 300
+        },
+        {
+          "currency": "xp",
+          "amount": 2500
+        }
+      ]
+    },
+    {
+      "id": "m_veado_80",
+      "category": "monthly",
+      "title": "Caçador experiente",
+      "description": "Cace 80 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 80,
+      "rewards": [
+        {
+          "item": "pano",
+          "amount": 150
+        },
+        {
+          "currency": "ds",
+          "amount": 25
+        },
+        {
+          "currency": "xp",
+          "amount": 1000
+        }
+      ]
+    },
+    {
+      "id": "m_veado_150",
+      "category": "monthly",
+      "title": "Curtume",
+      "description": "Cace 150 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 150,
+      "rewards": [
+        {
+          "item": "madeira",
+          "amount": 8000
+        },
+        {
+          "currency": "ds",
+          "amount": 30
+        },
+        {
+          "currency": "xp",
+          "amount": 1200
+        }
+      ]
+    },
+    {
+      "id": "m_veado_250",
+      "category": "monthly",
+      "title": "Rei da floresta",
+      "description": "Cace 250 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 250,
+      "rewards": [
+        {
+          "item": "pano",
+          "amount": 250
+        },
+        {
+          "currency": "ds",
+          "amount": 40
+        },
+        {
+          "currency": "xp",
+          "amount": 1500
+        }
+      ]
+    },
+    {
+      "id": "m_veado_400",
+      "category": "monthly",
+      "title": "Fantasma da mata",
+      "description": "Cace 400 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 400,
+      "rewards": [
+        {
+          "item": "pedra",
+          "amount": 8000
+        },
+        {
+          "currency": "ds",
+          "amount": 50
+        },
+        {
+          "currency": "xp",
+          "amount": 2000
+        }
+      ]
+    },
+    {
+      "id": "m_veado_600",
+      "category": "monthly",
+      "title": "Caçador lendário",
+      "description": "Cace 600 veados",
+      "action": "kill_animal",
+      "target": "animal_veado",
+      "amount": 600,
+      "rewards": [
+        {
+          "item": "pano",
+          "amount": 400
+        },
+        {
+          "currency": "ds",
+          "amount": 60
+        },
+        {
+          "currency": "xp",
+          "amount": 2500
+        }
+      ]
+    },
+    {
+      "id": "m_animais_750",
+      "category": "monthly",
+      "title": "Topo da cadeia",
+      "description": "Cace 750 animais quaisquer",
+      "action": "kill_animal",
+      "target": "*",
+      "amount": 750,
+      "rewards": [
+        {
+          "item": "metal",
+          "amount": 2500
+        },
+        {
+          "currency": "ds",
+          "amount": 50
+        },
+        {
+          "currency": "xp",
+          "amount": 2000
+        }
+      ]
+    },
+    {
+      "id": "m_animais_2000",
+      "category": "monthly",
+      "title": "Senhor das feras",
+      "description": "Cace 2000 animais quaisquer",
+      "action": "kill_animal",
+      "target": "*",
+      "amount": 2000,
+      "rewards": [
+        {
+          "item": "arma_prego",
+          "amount": 1
+        },
+        {
+          "currency": "ds",
+          "amount": 80
+        },
+        {
+          "currency": "xp",
+          "amount": 3500
+        }
+      ]
+    }
+  ]
+}

@@ -321,7 +321,7 @@ if (S.key) api("/ping", { silent: true }).then(entrar).catch(() => doLogout());
 
 /* ═══════════════════════════════ nav / router ═══════════════════════════════ */
 const NAV = [
-["Operação", [["overview", "Visão geral"], ["players", "Jogadores"], ["coins", "Moedas"], ["bans", "Banimentos"], ["servers", "Servidores"], ["push", "Push"]]],
+["Operação", [["overview", "Visão geral"], ["players", "Jogadores"], ["coins", "Moedas"], ["bans", "Banimentos"], ["servers", "Servidores"], ["push", "Push"], ["quests", "Missões"]]],
 ["Loja", [["orders","Pedidos"], ["reports","Relatórios"], ["skins","Skins"], ["roulette","Roleta"],
              ["packages","Pacotes DC"], ["popups","Pop-ups"]]],
 ["Sistema", [["config", "Configuração"], ["logs", "Logs"], ["audit", "Auditoria"]]],
@@ -704,9 +704,12 @@ VIEWS.coins = async function () {
   await load();
 };
 
+
 /* ═══════════════════════════════ BANIMENTOS ═══════════════════════════════ */
 VIEWS.bans = async function () {
   let all = false;
+  const md = { q: "", t: null, modelos: [], sel: null };
+
   async function load() {
     const [r, s] = await Promise.all([api(`/bans?all=${all ? 1 : 0}`), api("/bans/settings")]);
     $("#banIp").checked = s.banByIp;
@@ -720,12 +723,92 @@ VIEWS.bans = async function () {
     bindActions($("#blist"));
     S._bans = r.bans;
   }
-  setMain(`<div class="top"><div><h1>Banimentos</h1><p>Um ban bloqueia login por conta, deviceId, hardwareId e (opcionalmente) IP.</p></div>
+
+  async function loadModelBans() {
+    const r = await api(`/bans/models?all=${all ? 1 : 0}`);
+    $("#mblist").innerHTML = table([
+      { h: "Status", f: (b) => `<span class="tag ${b.active ? "danger" : ""}">${b.active ? "ativo" : "removido"}</span>` },
+      { h: "Modelo", f: (b) => `<b class="mono">${esc(b.model)}</b>` },
+      { h: "Plataforma", f: (b) => b.platform ? `<span class="tag">${esc(b.platform)}</span>` : '<span class="hint">todas</span>' },
+      { h: "Motivo", f: (b) => esc(b.reason) },
+      { h: "Tentativas bloqueadas", f: (b) => fmtN(b.hits || 0), num: true },
+      { h: "Última tentativa", f: (b) => b.lastHitAt ? `${ago(b.lastHitAt)} atrás <span class="hint mono">${esc(b.lastHitIp || "")}</span>` : '<span class="hint">nenhuma</span>' },
+      { h: "Criado", f: (b) => fmtDT(b.createdAt) },
+      { h: "", f: (b) => b.active ? `<button class="btn sm" data-act="unbanmodel" data-key="${esc(b.key)}">Remover</button>` : "" },
+    ], r.bans, { empty: "Nenhum modelo banido." });
+    bindActions($("#mblist"));
+  }
+
+  async function buscarModelos() {
+    const out = $("#mdres");
+    if (!out) return;
+    $("#mdacc").innerHTML = "";
+    if (md.q.length < 2) {
+      md.modelos = [];
+      out.innerHTML = `<p class="hint" style="margin:0">Digite parte do modelo (ex.: <span class="mono">X6725</span>) para ver quais aparelhos e contas aparecem.</p>`;
+      return;
+    }
+    let r;
+    try { r = await api(`/devices/models?q=${encodeURIComponent(md.q)}`, { silent: true }); }
+    catch (e) { out.innerHTML = `<div class="dangerbox">${esc(e.message)}</div>`; return; }
+    md.modelos = r.models;
+    out.innerHTML = table([
+      { h: "Modelo", f: (m) => `<b class="mono">${esc(m.model)}</b>` },
+      { h: "Plataforma", f: (m) => m.platforms.map((p) => `<span class="tag">${esc(p)}</span>`).join(" ") || "—" },
+      { h: "Contas", f: (m) => fmtN(m.players), num: true },
+      { h: "Aparelhos", f: (m) => fmtN(m.devices), num: true },
+      { h: "Último visto", f: (m) => m.lastSeen ? `${ago(m.lastSeen)} atrás` : "—" },
+      { h: "Status", f: (m) => m.banned ? '<span class="tag danger">banido</span>' : "" },
+      { h: "", f: (m, i) => "" },
+    ].map((c, k, arr) => (k === arr.length - 1
+      ? { h: "", f: (m) => { const i = md.modelos.indexOf(m); return `<button class="btn sm" data-act="mdcontas" data-i="${i}">Ver contas</button> <button class="btn sm d" data-act="banmodel" data-i="${i}" ${m.banned ? "disabled" : ""}>Banir modelo</button>`; } }
+      : c)), r.models, { empty: `Nenhum aparelho com "${esc(md.q)}" nos fingerprints.` });
+    bindActions(out);
+  }
+
+  async function verContas(m) {
+    md.sel = m.key;
+    const box = $("#mdacc");
+    box.innerHTML = `<p class="hint" style="margin-top:12px">Carregando contas…</p>`;
+    const r = await api(`/devices/search?model=${encodeURIComponent(m.model)}&exact=1`);
+    if (!$("#mdacc")) return;
+    box.innerHTML = `<h3 style="margin:16px 0 10px">Contas que usaram <span class="mono">${esc(m.model)}</span> (${fmtN(r.total)})</h3>` + table([
+      { h: "Jogador", f: (p) => `${playerLink(p.playerId, p.playerName)} ${p.banned ? '<span class="tag danger">banido</span>' : ""}${p.existe ? "" : ' <span class="tag">conta excluída</span>'}` },
+      { h: "Tipo", f: (p) => p.accountType ? `<span class="tag">${esc(p.accountType)}</span> ${p.email ? `<span class="hint">${esc(p.email)}</span>` : ""}` : "—" },
+      { h: "Nível", f: (p) => p.level ?? "—", num: true },
+      { h: "Criada", f: (p) => fmtDT(p.createdAt) },
+      { h: "deviceIds", f: (p) => p.devices.map((d) => `<span class="mono hint" title="${esc(d.deviceId || "")}">${esc(String(d.deviceId || "—").slice(0, 16))}</span>`).join("<br>") },
+      { h: "Último IP", f: (p) => `<span class="mono">${esc(p.lastIp || "—")}</span>` },
+      { h: "Visto", f: (p) => p.lastSeen ? `${ago(p.lastSeen)} atrás` : "—" },
+    ], r.rows, { empty: "Nenhuma conta com este modelo." });
+  }
+
+  const recarregarTudo = async () => {
+    await Promise.all([load(), loadModelBans(), buscarModelos()]);
+    const m = md.modelos.find((x) => x.key === md.sel);
+    if (m) await verContas(m);
+  };
+
+  setMain(`<div class="top"><div><h1>Banimentos</h1><p>Um ban bloqueia login por conta, deviceId, hardwareId, (opcionalmente) IP e modelo de dispositivo.</p></div>
     <div class="row"><label class="check"><input type="checkbox" id="banIp"> Bloquear também por IP</label><label class="check"><input type="checkbox" id="banAll"> Mostrar removidos</label><button class="btn d" data-act="new">Banir por playerId</button></div></div>
+
+    <div class="panel" style="margin-bottom:14px"><div class="ph"><h2>Buscar e banir por modelo de dispositivo</h2>
+      <div class="row"><input type="text" id="mdq" class="sm mono" style="width:280px" placeholder="ex.: Infinix X6725"><button class="btn sm" data-act="mdsearch">Buscar</button></div></div>
+      <p class="hint" style="margin:0 0 12px">O modelo banido bloqueia login e criação de conta de qualquer aparelho que se identifique com ele. O modelo é informado pelo cliente, então use junto com os bans de conta e acompanhe as "tentativas bloqueadas".</p>
+      <div id="mdres"></div><div id="mdacc"></div></div>
+
+    <div class="section-title">Modelos banidos</div>
+    <div id="mblist"></div>
+
+    <div class="section-title">Contas banidas</div>
     <div class="warnbox" style="margin-bottom:12px">Ban por IP pega jogadores atrás do mesmo NAT (escola, faculdade, casa). Se um inocente reclamar, abra o ban em "Detalhes" e remova o IP da lista.</div>
     <div id="blist"></div>`);
-  $("#banAll").onchange = (e) => { all = e.target.checked; load(); };
+
+  $("#banAll").onchange = (e) => { all = e.target.checked; load(); loadModelBans(); };
   $("#banIp").onchange = async (e) => { await api("/bans/settings", { method: "PUT", body: { banByIp: e.target.checked } }); toast(e.target.checked ? "Ban por IP ativado." : "Ban por IP desativado (até reiniciar)."); };
+  $("#mdq").oninput = () => { clearTimeout(md.t); md.t = setTimeout(() => { md.q = $("#mdq").value.trim(); md.sel = null; buscarModelos(); }, 300); };
+  $("#mdq").onkeydown = (e) => { if (e.key === "Enter") { clearTimeout(md.t); md.q = $("#mdq").value.trim(); md.sel = null; buscarModelos(); } };
+
   ACTIONS.new = async () => { const v = await confirmar("Banir jogador", "Informe o playerId. O motivo pode ser adicionado nos detalhes.", { danger: true, okLabel: "Banir", campo: { label: "playerId" } }); if (v) { await api("/bans", { method: "POST", body: { playerId: +v, reason: "Banido pelo painel" } }); toast("Banido."); load(); } };
   ACTIONS.unban = async (d) => { await api(`/bans/${d.id}`, { method: "DELETE" }); toast("Banimento removido."); load(); };
   ACTIONS.edit = (d) => {
@@ -741,9 +824,44 @@ VIEWS.bans = async function () {
     const lines = (id) => $(id, box).value.split("\n").map((s) => s.trim()).filter(Boolean);
     $("#bGo", box).onclick = async () => { await api(`/bans/${encodeURIComponent(b.banId)}`, { method: "PATCH", body: { reason: $("#bReason", box).value, deviceIds: lines("#bDev"), hardwareIds: lines("#bHw"), ips: lines("#bIp") } }); closeModal(); toast("Ban atualizado."); load(); };
   };
-  await load();
-};
 
+  ACTIONS.mdsearch = () => { md.q = $("#mdq").value.trim(); md.sel = null; buscarModelos(); };
+  ACTIONS.mdcontas = (d) => { const m = md.modelos[+d.i]; if (m) verContas(m); };
+  ACTIONS.banmodel = (d) => {
+    const m = md.modelos[+d.i];
+    if (!m) return;
+    const umaPlat = m.platforms.length === 1 ? m.platforms[0] : null;
+    const box = modal(`<h2>Banir modelo de dispositivo</h2>
+      <p style="color:var(--muted);margin:0 0 12px">Bloqueia login e criação de conta de qualquer aparelho que se identificar como <b class="mono">${esc(m.model)}</b>.</p>
+      <div class="f"><label>Motivo</label><input type="text" id="bmReason" value="Uso de cheat (modelo de dispositivo banido)"></div>
+      ${umaPlat ? `<label class="check" style="margin-top:10px"><input type="checkbox" id="bmPlat" checked> Só na plataforma <b>${esc(umaPlat)}</b></label>` : ""}
+      <label class="check" style="margin-top:10px"><input type="checkbox" id="bmAcc" checked> Banir também as ${fmtN(m.players)} conta(s) que já usaram este modelo e encerrar as sessões</label>
+      ${m.players > 1 ? `<div class="warnbox" style="margin-top:12px">${fmtN(m.players)} contas diferentes usaram este modelo. Confira em "Ver contas" se todas são do mesmo jogador antes de banir.</div>` : ""}
+      <div class="acts"><button class="btn" data-x>Cancelar</button><button class="btn d" id="bmGo">Banir modelo</button></div>`);
+    $("[data-x]", box).onclick = closeModal;
+    $("#bmGo", box).onclick = async () => {
+      const r = await api("/bans/models", { method: "POST", body: {
+        model: m.model,
+        platform: umaPlat && $("#bmPlat", box)?.checked ? umaPlat : null,
+        reason: $("#bmReason", box).value.trim(),
+        banAccounts: $("#bmAcc", box).checked,
+      } });
+      closeModal();
+      toast(`Modelo banido · ${r.contasBanidas} conta(s) banida(s)${r.jaBanidas ? ` · ${r.jaBanidas} já estavam banidas` : ""}.`);
+      md.sel = m.key;
+      recarregarTudo();
+    };
+  };
+  ACTIONS.unbanmodel = async (d) => {
+    if (!(await confirmar("Remover ban de modelo", `O modelo volta a poder logar e criar contas. As contas banidas junto com ele <b>continuam banidas</b>.`, { okLabel: "Remover" }))) return;
+    await api(`/bans/models/${encodeURIComponent(d.key)}`, { method: "DELETE" });
+    toast("Ban de modelo removido.");
+    recarregarTudo();
+  };
+
+  await Promise.all([load(), loadModelBans()]);
+  buscarModelos();
+};
 /* ═══════════════════════════════ SERVIDORES ═══════════════════════════════ */
 VIEWS.servers = async function () {
   async function load() {
@@ -1955,6 +2073,656 @@ VIEWS.packages = async function () {
   ACTIONS.save = async () => { const x = await api("/packages", { method: "PUT", body: { packages: list.map(({ packageId, amountDC, bonusDC, priceCents }) => ({ packageId, amountDC, bonusDC, priceCents })) } }); toast(`${x.packages.length} pacotes aplicados.`); route(); };
 };
 
+/* ═══════════════════════════════ MISSÕES ═══════════════════════════════s do master: registrarRotasAdminMissoes() em quests.js.
+ */
+const QCAT = [["initial", "Iniciais"], ["daily", "Diárias"], ["weekly", "Semanais"], ["monthly", "Mensais"]];
+const QLANG = [["pt", "Português"], ["en", "Inglês"], ["es", "Espanhol"]];
+const qCatNome = (c) => (QCAT.find((x) => x[0] === c) || [, c])[1];
+const qClone = (o) => JSON.parse(JSON.stringify(o));
+const qRecompensa = (r) => (r.item !== undefined
+  ? `${fmtN(r.amount)} ${esc(r.item)}`
+  : `${fmtN(r.amount)} ${esc(String(r.currency || "?").toUpperCase())}`);
+const qObjetivo = (q) => `<span class="tag">${esc(q.action)}</span> ${q.target == null || q.target === "*" ? "qualquer" : esc(q.target)} × ${fmtN(q.amount)}`;
+
+/** Salva via fetch direto para receber a lista de erros do 422 (o api() só devolve a mensagem). */
+async function qSalvarNoMaster(body) {
+  const res = await fetch(`${S.base}/admin/api/quests`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-Admin-Key": S.key },
+    body: JSON.stringify(body),
+  });
+  let j = null;
+  try { j = await res.json(); } catch { /* vazio */ }
+  if (res.status === 401) { doLogout("Chave recusada pelo servidor."); throw new Error("não autorizado"); }
+  if (res.status === 413) throw new Error("Arquivo grande demais para o servidor: aumente o limit do express.json() (ex.: 2mb).");
+  return { status: res.status, ...(j || { ok: false, error: `${res.status} ${res.statusText}` }) };
+}
+
+VIEWS.quests = async function (tab = "missoes", arg) {
+  const d = await api("/quests");
+  const L = d.limites;
+
+  if (!d.raw) {
+    setMain(`<div class="top"><div><h1>Missões</h1></div></div>
+      <div class="dangerbox">${esc(d.erroLeitura ? `Não foi possível ler os arquivos: ${d.erroLeitura}` : "data/quests.json não existe no master.")}</div>`);
+    return;
+  }
+
+  const trVazia = (lang) => ({ language: lang, categories: {}, quests: {} });
+  const st = {
+    raw: qClone(d.raw),
+    tr: {},
+    tab,
+    cat: sessionStorage.getItem("decay.qcat") || "initial",
+    jsonArq: "pt",
+    statCat: "initial",
+    statPeriod: "",
+    playerId: tab === "jogador" && arg ? arg : "",
+    playerLang: "",
+    filtroAlvo: "",
+    dirty: false,
+  };
+  for (const [lang] of QLANG) {
+    if (lang === d.idiomaBase) continue;
+    const t = d.traducoes?.[lang];
+    st.tr[lang] = t && typeof t === "object" ? qClone(t) : trVazia(lang);
+    st.tr[lang].quests ||= {};
+    st.tr[lang].categories ||= {};
+  }
+  st.raw.quests ||= [];
+  st.raw.actions ||= {};
+  st.raw.targets ||= {};
+  st.raw.rotation ||= {};
+  st.raw.categoryLabels ||= {};
+
+  const TABS = [["missoes", "Missões"], ["rotacao", "Rotação atual"], ["stats", "Progresso geral"], ["jogador", "Jogador"], ["config", "Ações, alvos e regras"], ["json", "JSON"]];
+  const doCat = (cat) => st.raw.quests.filter((q) => q.category === cat);
+  const marcarSujo = () => { st.dirty = true; const b = $("#qDirty"); if (b) b.style.display = ""; };
+  const usos = (bloco, k) => st.raw.quests.filter((q) => bloco === "actions"
+    ? q.action === k
+    : q.target === k || (q.rewards || []).some((r) => r.item === k)).length;
+
+  /** Mesmas regras do master, para avisar antes de salvar. */
+  function problemas(q) {
+    const p = [];
+    if (!/^[A-Za-z0-9_]{1,48}$/.test(q.id || "")) p.push("id inválido");
+    if (st.raw.quests.filter((x) => x.id === q.id).length > 1) p.push("id repetido");
+    if (!String(q.title || "").trim()) p.push("sem título em português");
+    if (!Number.isInteger(q.amount) || q.amount <= 0) p.push("quantidade inválida");
+    if (!(q.action in st.raw.actions)) p.push(`ação '${q.action}' não existe`);
+    if (q.target != null && q.target !== "*" && !Number.isInteger(q.target) && !(st.raw.targets[q.target] > 0)) p.push(`alvo '${q.target}' sem ItemID`);
+    const rw = q.rewards || [];
+    if (rw.length > L.recompensas) p.push(`${rw.length} recompensas (máx. ${L.recompensas})`);
+    for (const r of rw) {
+      if (r.currency === "dc" && !d.permitirDC) p.push("recompensa em DC");
+      if (r.item !== undefined && !Number.isInteger(r.item) && !(st.raw.targets[r.item] > 0)) p.push(`item '${r.item}' sem ItemID`);
+      if (!Number.isInteger(r.amount) || r.amount <= 0) p.push("recompensa com quantidade inválida");
+    }
+    const desc = { pt: q.description || "" };
+    for (const l of Object.keys(st.tr)) desc[l] = st.tr[l].quests[q.id]?.description || "";
+    for (const [l, t] of Object.entries(desc)) if (t.length > L.descricao) p.push(`descrição ${l.toUpperCase()} com ${t.length} caracteres`);
+    return p;
+  }
+  const semTraducao = (q) => Object.keys(st.tr).filter((l) => !String(st.tr[l].quests[q.id]?.title || "").trim());
+
+  const totalProblemas = () => st.raw.quests.reduce((a, q) => a + (problemas(q).length ? 1 : 0), 0);
+
+  const carga = d.carga || { erros: [], avisos: [] };
+  setMain(`<div class="top"><div><h1>Missões</h1>
+      <p>${fmtN(st.raw.quests.length)} missões em 3 idiomas. A mecânica fica em quests.json e os textos em inglês e espanhol em quests.en.json e quests.es.json.
+      <span id="qDirty" class="tag gold" style="display:none">alterações não salvas</span></p></div>
+    <div class="row"><button class="btn" data-act="qreload">Recarregar do disco</button><button class="btn p" data-act="qsave">Salvar e aplicar</button></div></div>
+    ${carga.erros?.length ? `<div class="dangerbox" style="margin-bottom:12px"><b>Missões ignoradas na última carga:</b><br>${carga.erros.map(esc).join("<br>")}</div>` : ""}
+    ${carga.avisos?.length ? `<div class="warnbox" style="margin-bottom:12px">${carga.avisos.map(esc).join("<br>")}</div>` : ""}
+    <div id="qErros"></div>
+    <div class="tabs" id="qtabs"></div><div id="qbody"></div>`);
+
+  function paint() {
+    $("#qtabs").innerHTML = TABS.map(([k, l]) => `<button class="${k === st.tab ? "on" : ""}" data-act="qtab" data-t="${k}">${l}</button>`).join("");
+    bindActions($("#qtabs"));
+    ({ missoes: pintarMissoes, rotacao: pintarRotacao, stats: pintarStats, jogador: pintarJogador, config: pintarConfig, json: pintarJson }[st.tab] || pintarMissoes)();
+  }
+
+  // ── Missões ─────────────────────────────────────────────────────────────
+  function pintarMissoes() {
+    const body = $("#qbody");
+    const lista = doCat(st.cat);
+    const rot = st.raw.rotation[st.cat];
+    const info = st.cat === "initial"
+      ? `Todas ficam ativas até o jogador resgatar a última. ${st.raw.initialSequential ? "Sequenciais: a ordem abaixo é a ordem do tutorial." : "Não sequenciais: podem ser feitas em qualquer ordem."}`
+      : `Pool de ${lista.length} · ${rot ? `sorteia ${rot} por período` : "sem rotação: todas ficam ativas"}`;
+    const nProb = totalProblemas();
+
+    body.innerHTML = `<div class="row" style="margin-bottom:12px">
+        ${QCAT.map(([k, l]) => `<button class="btn sm ${k === st.cat ? "p" : ""}" data-act="qcat" data-c="${k}">${l} (${doCat(k).length})</button>`).join("")}
+        <span style="flex:1"></span>
+        ${nProb ? `<span class="tag danger">${nProb} missão(ões) com problema</span>` : ""}
+        <button class="btn p sm" data-act="qnew">Nova missão</button></div>
+      <p class="hint" style="margin:0 0 12px">${esc(info)}</p>
+      ${table([
+        { h: "#", f: (q) => q._pos },
+        { h: "Missão", f: (q) => `<b>${esc(q.title)}</b><br><span class="hint">${esc(q.description || "")}</span><br><span class="hint mono">${esc(q.id)}</span>` },
+        { h: "Objetivo", f: (q) => qObjetivo(q) },
+        { h: "Recompensas", f: (q) => (q.rewards || []).map((r) => `<span class="tag ${r.currency === "dc" ? "danger" : r.currency === "ds" ? "gold" : ""}">${qRecompensa(r)}</span>`).join(" ") || '<span class="hint">nenhuma</span>' },
+        { h: "Traduções", f: (q) => { const f = semTraducao(q); return Object.keys(st.tr).map((l) => `<span class="tag ${f.includes(l) ? "danger" : "ok"}">${l.toUpperCase()}</span>`).join(" "); } },
+        { h: "", f: (q) => { const p = problemas(q); return p.length ? `<span class="tag danger" title="${esc(p.join("\n"))}">${p.length} problema(s)</span>` : ""; } },
+        { h: "", f: (q) => `<button class="btn sm" data-act="qup" data-id="${esc(q.id)}">↑</button>
+            <button class="btn sm" data-act="qdown" data-id="${esc(q.id)}">↓</button>
+            <button class="btn sm" data-act="qedit" data-id="${esc(q.id)}">Editar</button>
+            <button class="btn sm" data-act="qdup" data-id="${esc(q.id)}">Duplicar</button>
+            <button class="btn sm d" data-act="qrm" data-id="${esc(q.id)}">Excluir</button>` },
+      ], lista.map((q, i) => ({ ...q, _pos: i + 1 })), { empty: `Nenhuma missão ${qCatNome(st.cat).toLowerCase()}. Crie a primeira.` })}`;
+    bindActions(body);
+  }
+
+  function editarMissao(orig, { novo = false, id } = {}) {
+    const q = qClone(orig);
+    if (id !== undefined) q.id = id;
+    let rw = qClone(q.rewards || []);
+    const txt = { pt: { title: q.title || "", description: q.description || "" } };
+    for (const l of Object.keys(st.tr)) {
+      const t = st.tr[l].quests[orig.id] || {};
+      txt[l] = { title: t.title || "", description: t.description || "" };
+    }
+    const acoes = Object.keys(st.raw.actions);
+    const alvos = Object.keys(st.raw.targets);
+    const alvoAtual = q.target == null ? "*" : String(q.target);
+    const optsAlvo = (sel, comQualquer) =>
+      (comQualquer ? `<option value="*" ${sel === "*" ? "selected" : ""}>Qualquer</option>` : "") +
+      (sel !== "*" && !alvos.includes(sel) ? `<option value="${esc(sel)}" selected>${esc(sel)} (ItemID direto)</option>` : "") +
+      alvos.map((k) => `<option value="${esc(k)}" ${k === sel ? "selected" : ""}>${esc(k)} · ${st.raw.targets[k]}</option>`).join("");
+
+    const box = modal(`<h2>${novo ? "Nova missão" : esc(q.title || q.id)}</h2>
+      <div class="grid g4">
+        <div class="f"><label>id</label><input type="text" id="qeId" value="${esc(q.id || "")}" ${novo ? "" : "readonly"} placeholder="d_madeira_800">
+          <span class="sub">${novo ? "Letras, números e _. Não dá para trocar depois." : "Trocar o id apagaria o progresso dos jogadores."}</span></div>
+        <div class="f"><label>Categoria</label><select id="qeCat">${QCAT.map(([k, l]) => `<option value="${k}" ${k === q.category ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+        <div class="f"><label>Ação</label><select id="qeAct">${(q.action in st.raw.actions ? "" : `<option selected>${esc(q.action || "")}</option>`) + acoes.map((k) => `<option ${k === q.action ? "selected" : ""}>${esc(k)}</option>`).join("")}</select></div>
+        <div class="f"><label>Quantidade</label><input type="number" id="qeAmt" min="1" value="${q.amount ?? 1}"></div>
+        <div class="f" style="grid-column:span 2"><label>Alvo</label><select id="qeTgt">${optsAlvo(alvoAtual, true)}</select></div>
+      </div>
+      <h3 style="margin:16px 0 8px">Textos</h3>
+      <div class="grid g3">${QLANG.map(([l, nome]) => `<div class="f"><label>${nome}${l === d.idiomaBase ? " (obrigatório)" : ""}</label>
+          <input type="text" data-qt="${l}" data-k="title" value="${esc(txt[l].title)}" placeholder="Título">
+          <input type="text" data-qt="${l}" data-k="description" value="${esc(txt[l].description)}" placeholder="Descrição" style="margin-top:6px">
+          <span class="sub" id="qeCnt_${l}"></span></div>`).join("")}</div>
+      <p class="hint" style="margin:6px 0 0">Inglês ou espanhol sem título usam o texto em português. A descrição tem no máximo ${L.descricao} caracteres.</p>
+      <div class="ph" style="margin:16px 0 8px"><h3>Recompensas (máx. ${L.recompensas})</h3><button class="btn sm" id="qeAddRw">Adicionar recompensa</button></div>
+      <div id="qeRw"></div>
+      <div id="qeErr" style="margin-top:12px"></div>
+      <div class="acts"><button class="btn" data-x>Cancelar</button><button class="btn p" id="qeGo">${novo ? "Criar missão" : "Salvar missão"}</button></div>`, { wide: true });
+
+    const contar = () => {
+      for (const [l] of QLANG) {
+        const n = txt[l].description.length, el = $(`#qeCnt_${l}`, box);
+        el.textContent = `${n}/${L.descricao} caracteres`;
+        el.style.color = n > L.descricao ? "var(--danger)" : "";
+      }
+    };
+    $$("[data-qt]", box).forEach((el) => el.oninput = () => { txt[el.dataset.qt][el.dataset.k] = el.value; contar(); });
+    contar();
+
+    const pintarRw = () => {
+      const tipos = (r) => [["item", "Item"], ["xp", "XP"], ["ds", "DS"], ["dc", "DC (moeda paga)"]].map(([k, l]) => {
+        const atual = r.item !== undefined ? "item" : r.currency;
+        const bloqueado = k === "dc" && !d.permitirDC && atual !== "dc";
+        return `<option value="${k}" ${k === atual ? "selected" : ""} ${bloqueado ? "disabled" : ""}>${l}</option>`;
+      }).join("");
+      $("#qeRw", box).innerHTML = rw.length ? rw.map((r, i) => `<div class="row" style="margin-bottom:6px">
+          <select class="sm" data-rw="${i}" data-k="tipo">${tipos(r)}</select>
+          ${r.item !== undefined ? `<select class="sm" data-rw="${i}" data-k="item" style="min-width:220px">${optsAlvo(String(r.item), false)}</select>` : ""}
+          <input type="number" class="sm" min="1" style="width:120px" data-rw="${i}" data-k="amount" value="${r.amount ?? 1}">
+          ${r.currency === "dc" ? '<span class="tag danger">DC é a moeda paga</span>' : ""}
+          <button class="btn sm d" data-rwx="${i}">Remover</button></div>`).join("")
+        : `<p class="hint">Sem recompensa.</p>`;
+      $("#qeAddRw", box).disabled = rw.length >= L.recompensas;
+      $$("[data-rw]", box).forEach((el) => el.onchange = () => {
+        const i = +el.dataset.rw, k = el.dataset.k;
+        if (k === "amount") rw[i].amount = parseInt(el.value, 10) || 0;
+        else if (k === "item") rw[i].item = el.value;
+        else rw[i] = el.value === "item" ? { item: alvos[0] || "", amount: rw[i].amount } : { currency: el.value, amount: rw[i].amount };
+        pintarRw();
+      });
+      $$("[data-rwx]", box).forEach((el) => el.onclick = () => { rw.splice(+el.dataset.rwx, 1); pintarRw(); });
+    };
+    $("#qeAddRw", box).onclick = () => { if (rw.length < L.recompensas) { rw.push({ currency: "xp", amount: 50 }); pintarRw(); } };
+    pintarRw();
+
+    $("[data-x]", box).onclick = closeModal;
+    $("#qeGo", box).onclick = () => {
+      const tgt = $("#qeTgt", box).value;
+      const m = {
+        id: $("#qeId", box).value.trim(),
+        category: $("#qeCat", box).value,
+        title: txt.pt.title.trim(),
+        description: txt.pt.description.trim(),
+        action: $("#qeAct", box).value,
+        target: tgt === "*" ? "*" : (/^\d+$/.test(tgt) && !(tgt in st.raw.targets) ? Number(tgt) : tgt),
+        amount: parseInt($("#qeAmt", box).value, 10),
+        rewards: rw.map((r) => (r.item !== undefined
+          ? { item: /^\d+$/.test(String(r.item)) && !(r.item in st.raw.targets) ? Number(r.item) : r.item, amount: r.amount }
+          : { currency: r.currency, amount: r.amount })),
+      };
+      const erros = [];
+      if (!/^[A-Za-z0-9_]{1,48}$/.test(m.id)) erros.push("id inválido: use letras, números e _ (até 48).");
+      if (novo && st.raw.quests.some((x) => x.id === m.id)) erros.push("Já existe uma missão com esse id.");
+      if (!m.title) erros.push("O título em português é obrigatório.");
+      if (!(m.amount > 0)) erros.push("A quantidade precisa ser maior que zero.");
+      if (m.rewards.length > L.recompensas) erros.push(`No máximo ${L.recompensas} recompensas.`);
+      if (m.rewards.some((r) => !(r.amount > 0))) erros.push("Toda recompensa precisa de quantidade maior que zero.");
+      if (m.rewards.some((r) => r.currency === "dc") && !d.permitirDC) erros.push("Missões não podem dar DC (moeda paga).");
+      for (const [l, nome] of QLANG) {
+        if (txt[l].description.trim().length > L.descricao) erros.push(`Descrição em ${nome.toLowerCase()} passa de ${L.descricao} caracteres.`);
+      }
+      if (erros.length) { $("#qeErr", box).innerHTML = `<div class="dangerbox">${erros.map(esc).join("<br>")}</div>`; return; }
+
+      if (novo) {
+        let fim = -1;
+        st.raw.quests.forEach((x, i) => { if (x.category === m.category) fim = i; });
+        st.raw.quests.splice(fim >= 0 ? fim + 1 : st.raw.quests.length, 0, m);
+      } else {
+        st.raw.quests[st.raw.quests.findIndex((x) => x.id === orig.id)] = m;
+      }
+      for (const l of Object.keys(st.tr)) {
+        const t = txt[l];
+        if (t.title.trim()) st.tr[l].quests[m.id] = { title: t.title.trim(), description: t.description.trim() };
+        else delete st.tr[l].quests[m.id];
+      }
+      st.cat = m.category;
+      closeModal(); marcarSujo(); paint();
+      toast(novo ? "Missão criada no rascunho. Salve para aplicar." : "Missão alterada no rascunho. Salve para aplicar.");
+    };
+  }
+
+  const mover = (id, delta) => {
+    const arr = st.raw.quests, i = arr.findIndex((q) => q.id === id);
+    if (i < 0) return;
+    let j = i + delta;
+    while (j >= 0 && j < arr.length && arr[j].category !== arr[i].category) j += delta;
+    if (j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    marcarSujo(); pintarMissoes();
+  };
+
+  // ── Rotação atual ───────────────────────────────────────────────────────
+  function pintarRotacao() {
+    const body = $("#qbody");
+    const salvas = new Map((d.raw.quests || []).map((q) => [q.id, q]));
+    const agora = Math.floor(Date.now() / 1000);
+    const ini = d.categorias.initial;
+
+    body.innerHTML = `<p class="hint" style="margin:0 0 12px">A rotação usa as missões <b>salvas</b> no master, não o rascunho. O sorteio de cada período fica gravado: editar missões não troca as ativas até a próxima virada. Reset no fuso UTC${d.offsetMin >= 0 ? "+" : ""}${d.offsetMin / 60}.</p>
+      <div class="panel" style="margin-bottom:14px"><h2>Iniciais</h2><p class="hint" style="margin:4px 0 0">${fmtN(ini.pool)} missões, todas ativas para quem ainda não terminou o tutorial. ${d.raw.initialSequential ? "Sequenciais." : "Em qualquer ordem."}</p></div>
+      ${["daily", "weekly", "monthly"].map((cat) => {
+        const c = d.categorias[cat];
+        return `<div class="panel" style="margin-bottom:14px"><div class="ph">
+          <div><h2>${qCatNome(cat)} <span class="hint mono" style="font-weight:400">${esc(c.period)}</span> ${c.manual ? '<span class="tag gold">escolhidas à mão</span>' : '<span class="tag">sorteio automático</span>'}</h2>
+            <p class="hint" style="margin:4px 0 0">${c.rotacao ? `${c.ativas.length} de ${c.pool} ativas` : `sem rotação: todas as ${c.pool} ativas`} · vira em ${fmtDT(c.expiresAt)} (daqui a ${dur(Math.max(0, c.expiresAt - agora))}) · próximo período ${esc(c.proximo)}</p></div>
+          ${c.rotacao ? `<div class="row"><button class="btn sm" data-act="qrotpick" data-c="${cat}">Escolher missões</button><button class="btn sm d" data-act="qrotroll" data-c="${cat}">Sortear de novo</button></div>` : ""}</div>
+          ${table([
+            { h: "Missão", f: (id) => { const q = salvas.get(id); return q ? `<b>${esc(q.title)}</b> <span class="hint mono">${esc(id)}</span>` : `<span class="mono">${esc(id)}</span>`; } },
+            { h: "Objetivo", f: (id) => (salvas.get(id) ? qObjetivo(salvas.get(id)) : "—") },
+            { h: "Recompensas", f: (id) => (salvas.get(id)?.rewards || []).map((r) => `<span class="tag">${qRecompensa(r)}</span>`).join(" ") },
+          ], c.ativas, { empty: "Nenhuma missão ativa nesta categoria." })}</div>`;
+      }).join("")}`;
+    bindActions(body);
+  }
+
+  // ── Progresso geral ─────────────────────────────────────────────────────
+  async function pintarStats() {
+    const body = $("#qbody");
+    const per = st.statCat === "initial" ? "initial" : st.statPeriod || d.categorias[st.statCat].period;
+    body.innerHTML = `<div class="row" style="margin-bottom:12px">
+        <select id="qsCat" class="sm">${QCAT.map(([k, l]) => `<option value="${k}" ${k === st.statCat ? "selected" : ""}>${l}</option>`).join("")}</select>
+        <input type="text" id="qsPer" class="sm mono" style="width:140px" value="${esc(per)}" ${st.statCat === "initial" ? "disabled" : ""} placeholder="2026-W43">
+        <button class="btn sm" data-act="qstats">Atualizar</button>
+        <span class="hint">Formatos: diária 2026-10-21, semanal 2026-W43, mensal 2026-10.</span></div>
+      <div id="qsOut"><p class="hint">Carregando…</p></div>`;
+    $("#qsCat").onchange = (e) => { st.statCat = e.target.value; st.statPeriod = ""; pintarStats(); };
+    $("#qsPer").onchange = (e) => { st.statPeriod = e.target.value.trim(); pintarStats(); };
+    bindActions(body);
+
+    const s = await api(`/quests/stats?category=${st.statCat}&period=${encodeURIComponent(per)}`);
+    const out = $("#qsOut");
+    if (!out) return;
+    if (!s.quests.length) { out.innerHTML = `<div class="empty">Nenhuma missão nesse período.</div>`; return; }
+
+    const inicial = s.category === "initial";
+    const base = inicial ? (s.quests[0]?.jogadores || 0) : s.jogadoresUnicos;
+    const ultima = s.quests[s.quests.length - 1];
+    out.innerHTML = `<div class="grid g4" style="margin-bottom:14px">
+        ${stat(inicial ? "Começaram o tutorial" : "Jogadores com progresso", fmtN(s.jogadoresUnicos), esc(s.period), "info")}
+        ${inicial ? stat("Terminaram o tutorial", fmtN(ultima.resgataram), base ? `${pct(ultima.resgataram / base, 1)} de quem começou` : "", "ok") : stat("Missões concluídas", fmtN(s.quests.reduce((a, q) => a + q.concluiram, 0)), "soma de todas as missões", "ok")}
+        ${stat("Resgates", fmtN(s.quests.reduce((a, q) => a + q.resgataram, 0)), "recompensas entregues", "gold")}
+        ${stat("Concluídas sem resgate", fmtN(s.quests.reduce((a, q) => a + (q.concluiram - q.resgataram), 0)), "jogador ainda não resgatou")}
+      </div>
+      ${inicial ? `<div class="panel" style="margin-bottom:14px"><h2 style="margin-bottom:6px">Funil do tutorial</h2>
+        <p class="hint" style="margin:0 0 12px">Jogadores que concluíram cada etapa. Uma queda grande entre duas etapas mostra onde o jogador trava ou desiste.</p>
+        ${hbars(s.quests.map((q, i) => ({ etapa: `${i + 1}. ${q.title}`, n: q.concluiram })), "etapa", "n")}</div>` : ""}
+      ${table([
+        { h: "Missão", f: (q) => `<b>${esc(q.title)}</b> <span class="hint mono">${esc(q.id)}</span>${q.ativa ? "" : ' <span class="tag">fora da rotação</span>'}` },
+        { h: "Começaram", f: (q) => fmtN(q.jogadores), num: true },
+        { h: "Concluíram", f: (q) => fmtN(q.concluiram), num: true },
+        { h: "Resgataram", f: (q) => fmtN(q.resgataram), num: true },
+        { h: "Conclusão", f: (q) => (q.jogadores ? pct(q.concluiram / q.jogadores, 0) : "—"), num: true },
+        { h: inicial ? "Do total" : "Progresso médio", f: (q) => (inicial ? (base ? pct(q.concluiram / base, 0) : "—") : pct(q.mediaProgresso / q.amount, 0)), num: true },
+        { h: "Último avanço", f: (q) => (q.ultimo ? `${ago(q.ultimo)} atrás` : "—") },
+      ], s.quests)}`;
+  }
+
+  // ── Jogador ─────────────────────────────────────────────────────────────
+  async function pintarJogador() {
+    const body = $("#qbody");
+    body.innerHTML = `<div class="row" style="margin-bottom:12px">
+        <input type="text" id="qjId" class="sm" style="width:160px" placeholder="playerId" value="${esc(st.playerId)}">
+        <select id="qjLang" class="sm"><option value="" ${st.playerLang ? "" : "selected"}>Idioma da conta</option>${QLANG.map(([k, l]) => `<option value="${k}" ${k === st.playerLang ? "selected" : ""}>${l}</option>`).join("")}</select>
+        <button class="btn sm p" data-act="qjopen">Abrir</button>
+        <span class="hint">Mostra exatamente o que o jogador recebe, no idioma escolhido.</span></div>
+      <div id="qjOut">${st.playerId ? '<p class="hint">Carregando…</p>' : '<div class="empty">Informe um playerId para ver e ajustar as missões dele.</div>'}</div>`;
+    $("#qjId").onkeydown = (e) => { if (e.key === "Enter") ACTIONS.qjopen(); };
+    $("#qjLang").onchange = (e) => { st.playerLang = e.target.value; if (st.playerId) pintarJogador(); };
+    bindActions(body);
+    if (!st.playerId) return;
+
+    let r;
+    try {
+      r = await api(`/quests/player/${encodeURIComponent(st.playerId)}?lang=${st.playerLang}`, { silent: true });
+    } catch (e) {
+      const out = $("#qjOut");
+      if (out) out.innerHTML = `<div class="dangerbox">${esc(e.message)}</div>`;
+      return;
+    }
+    const out = $("#qjOut");
+    if (!out) return;
+    const sn = r.snapshot;
+    const prog = new Map(sn.progress.map((p) => [p.id, p]));
+    const status = (q) => {
+      const p = prog.get(q.id);
+      if (p?.rewarded) return '<span class="tag ok">resgatada</span>';
+      if (p && p.current >= q.amount) return '<span class="tag gold">concluída, falta resgatar</span>';
+      if (p && p.current > 0) return '<span class="tag info">em andamento</span>';
+      return '<span class="tag">não iniciada</span>';
+    };
+    const temIniciais = sn.categories.some((c) => c.category === "initial");
+
+    out.innerHTML = `<div class="row" style="margin-bottom:12px"><a href="#/players/${esc(st.playerId)}">Abrir a conta ${esc(st.playerId)}</a>
+        <span class="hint">snapshot em ${esc(sn.language.toUpperCase())}</span><span style="flex:1"></span>
+        <button class="btn sm d" data-act="qjtut">Refazer tutorial</button></div>
+      ${temIniciais ? '<p class="hint" style="margin:0 0 12px">Enquanto o tutorial não termina, o jogador não recebe diárias.</p>' : ""}
+      <p class="hint" style="margin:0 0 12px">Ajustar o progresso aqui não entrega recompensa: uma missão concluída pelo painel é resgatada no jogo, pelo servidor de partida.</p>
+      ${sn.categories.map((c) => `<div class="panel" style="margin-bottom:14px"><div class="ph"><h2>${esc(c.label || qCatNome(c.category))} <span class="hint mono" style="font-weight:400">${esc(c.period)}</span></h2>
+          <span class="hint">${c.expiresAt ? `vira em ${fmtDT(c.expiresAt)}` : c.sequential ? "sequenciais" : ""}</span></div>
+        ${table([
+          { h: "Missão", f: (q) => `<b>${esc(q.title)}</b><br><span class="hint">${esc(q.description)}</span>` },
+          { h: "Progresso", f: (q) => `${fmtN(Math.min(prog.get(q.id)?.current || 0, q.amount))}/${fmtN(q.amount)}`, num: true },
+          { h: "Status", f: (q) => status(q) },
+          { h: "", f: (q) => `<button class="btn sm" data-act="qjset" data-id="${esc(q.id)}" data-p="${esc(c.period)}" data-a="${q.amount}">Definir</button>
+              <button class="btn sm" data-act="qjdone" data-id="${esc(q.id)}" data-p="${esc(c.period)}" data-a="${q.amount}">Concluir</button>
+              <button class="btn sm d" data-act="qjzero" data-id="${esc(q.id)}" data-p="${esc(c.period)}">Zerar</button>` },
+        ], c.quests)}</div>`).join("") || '<div class="empty">Nenhuma missão ativa para este jogador.</div>'}
+      ${sn.pendingClaims.length ? `<div class="panel" style="margin-bottom:14px"><h2 style="margin-bottom:10px">Resgates pendentes do período anterior</h2>${table([
+          { h: "Missão", f: (p) => `<b>${esc(p.title)}</b> <span class="hint mono">${esc(p.id)}</span>` },
+          { h: "Período", f: (p) => `<span class="mono">${esc(p.period)}</span>` },
+          { h: "Pode resgatar até", f: (p) => fmtDT(p.expiresAt) },
+        ], sn.pendingClaims)}</div>` : ""}
+      <div class="panel"><h2 style="margin-bottom:10px">Histórico (${fmtN(r.linhas.length)})</h2>${table([
+        { h: "Missão", f: (l) => `${esc(l.title || "(removida)")} <span class="hint mono">${esc(l.questId)}</span>` },
+        { h: "Período", f: (l) => `<span class="mono">${esc(l.period)}</span>` },
+        { h: "Progresso", f: (l) => `${fmtN(l.progresso)}${l.amount ? `/${fmtN(l.amount)}` : ""}`, num: true },
+        { h: "Concluída", f: (l) => fmtDT(l.completedAt) },
+        { h: "Resgatada", f: (l) => fmtDT(l.rewardedAt) },
+        { h: "Atualizada", f: (l) => fmtDT(l.updatedAt) },
+        { h: "", f: (l) => `<button class="btn sm d" data-act="qjzero" data-id="${esc(l.questId)}" data-p="${esc(l.period)}">Zerar</button>` },
+      ], r.linhas, { empty: "Este jogador ainda não avançou em nenhuma missão." })}</div>`;
+    bindActions(out);
+  }
+
+  // ── Ações, alvos e regras ───────────────────────────────────────────────
+  function pintarConfig() {
+    const body = $("#qbody");
+    const R = st.raw;
+    const linhaKV = (bloco, k, v) => {
+      const u = usos(bloco, k);
+      return `<tr><td><input type="text" class="sm mono" style="width:200px" data-kv="${bloco}" data-old="${esc(k)}" data-f="key" value="${esc(k)}"></td>
+        <td class="num"><input type="number" class="sm" style="width:120px" data-kv="${bloco}" data-old="${esc(k)}" data-f="id" value="${v}"></td>
+        <td class="num">${u ? fmtN(u) : '<span class="hint">0</span>'}</td>
+        <td>${!(v > 0) ? '<span class="tag danger">id inválido</span> ' : ""}<button class="btn sm d" data-act="qkvrm" data-b="${bloco}" data-k="${esc(k)}" ${u ? `disabled title="Usado por ${u} missão(ões)"` : ""}>Remover</button></td></tr>`;
+    };
+    const filtro = st.filtroAlvo.toLowerCase();
+    const alvos = Object.entries(R.targets).filter(([k]) => !filtro || k.toLowerCase().includes(filtro));
+
+    body.innerHTML = `<div class="grid g2">
+      <div class="panel"><h2>Rotação e tutorial</h2><div class="grid g3">
+        ${["daily", "weekly", "monthly"].map((c) => `<div class="f"><label>${qCatNome(c)} por período</label><input type="number" min="0" data-rot="${c}" value="${R.rotation[c] ?? 0}">
+          <span class="sub">pool de ${doCat(c).length} · 0 = todas</span></div>`).join("")}</div>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="qcSeq" ${R.initialSequential ? "checked" : ""}> Missões iniciais em sequência (uma libera a próxima)</label>
+        <div class="f" style="margin-top:12px"><label>Tutorial só para contas criadas depois de</label>
+          <input type="datetime-local" id="qcDesde" value="${R.initialOnlyForAccountsCreatedAfter > 0 ? dtLocal(R.initialOnlyForAccountsCreatedAfter) : ""}">
+          <span class="sub">Vazio = todas as contas recebem o tutorial.</span></div>
+        <p class="hint" style="margin:12px 0 0">Mudar a quantidade por período vale a partir do próximo sorteio. Para trocar já, use "Sortear de novo" em Rotação atual depois de salvar.</p></div>
+      <div class="panel"><h2>Nomes das categorias</h2>
+        <div class="tw"><table><thead><tr><th>Categoria</th>${QLANG.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead><tbody>
+        ${QCAT.map(([c, nome]) => `<tr><td>${nome}</td>${QLANG.map(([l]) => {
+          const v = l === d.idiomaBase ? R.categoryLabels[c] : st.tr[l].categories[c];
+          return `<td><input type="text" class="sm" style="width:130px" data-lbl="${l}" data-c="${c}" value="${esc(v || "")}"></td>`;
+        }).join("")}</tr>`).join("")}</tbody></table></div>
+        <p class="hint" style="margin-top:8px">Aparecem no menu de missões do jogo. Vazio usa o nome padrão.</p></div>
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="panel"><div class="ph"><h2>Ações</h2><button class="btn sm" data-act="qkvadd" data-b="actions">Adicionar ação</button></div>
+        <p class="hint" style="margin:0 0 10px">O id precisa ser o mesmo que o servidor de partida envia. Renomear atualiza as missões que usam a ação.</p>
+        <div class="tw"><table><thead><tr><th>Nome</th><th class="num">id</th><th class="num">Missões</th><th></th></tr></thead><tbody>
+          ${Object.entries(R.actions).map(([k, v]) => linhaKV("actions", k, v)).join("")}</tbody></table></div></div>
+      <div class="panel"><div class="ph"><h2>Alvos e itens (${fmtN(Object.keys(R.targets).length)})</h2>
+          <div class="row"><input type="text" id="qcFiltro" class="sm" placeholder="filtrar" style="width:140px" value="${esc(st.filtroAlvo)}"><button class="btn sm" data-act="qkvadd" data-b="targets">Adicionar alvo</button></div></div>
+        <p class="hint" style="margin:0 0 10px">Nome usado nas missões → ItemID do jogo. Serve para objetivos e para recompensas em item.</p>
+        <div class="tw" style="max-height:480px"><table><thead><tr><th>Nome</th><th class="num">ItemID</th><th class="num">Missões</th><th></th></tr></thead><tbody>
+          ${alvos.map(([k, v]) => linhaKV("targets", k, v)).join("") || '<tr><td colspan="4" class="hint">Nenhum alvo com esse nome.</td></tr>'}</tbody></table></div></div>
+    </div>`;
+
+    $$("[data-rot]", body).forEach((el) => el.onchange = () => {
+      const n = parseInt(el.value, 10);
+      if (n > 0) R.rotation[el.dataset.rot] = n; else delete R.rotation[el.dataset.rot];
+      marcarSujo();
+    });
+    $("#qcSeq", body).onchange = (e) => { R.initialSequential = e.target.checked; marcarSujo(); };
+    $("#qcDesde", body).onchange = (e) => { R.initialOnlyForAccountsCreatedAfter = dtEpoch(e.target.value) || 0; marcarSujo(); };
+    $$("[data-lbl]", body).forEach((el) => el.onchange = () => {
+      const l = el.dataset.lbl, c = el.dataset.c, v = el.value.trim();
+      const alvo = l === d.idiomaBase ? R.categoryLabels : st.tr[l].categories;
+      if (v) alvo[c] = v; else delete alvo[c];
+      marcarSujo();
+    });
+    $("#qcFiltro", body).oninput = (e) => {
+      st.filtroAlvo = e.target.value;
+      clearTimeout(st.tFiltro);
+      st.tFiltro = setTimeout(() => { pintarConfig(); const f = $("#qcFiltro"); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } }, 250);
+    };
+    $$("[data-kv]", body).forEach((el) => el.onchange = () => {
+      const bloco = el.dataset.kv, velho = el.dataset.old;
+      if (el.dataset.f === "id") {
+        R[bloco][velho] = parseInt(el.value, 10) || 0;
+        marcarSujo(); pintarConfig(); return;
+      }
+      const novo = el.value.trim();
+      if (!/^[A-Za-z0-9_]{1,48}$/.test(novo)) { toast("Nome inválido: use letras, números e _.", "warn"); el.value = velho; return; }
+      if (novo === velho) return;
+      if (R[bloco][novo] !== undefined) { toast("Esse nome já existe.", "warn"); el.value = velho; return; }
+      const obj = {};
+      for (const [k, v] of Object.entries(R[bloco])) obj[k === velho ? novo : k] = v;
+      R[bloco] = obj;
+      for (const q of R.quests) {
+        if (bloco === "actions" && q.action === velho) q.action = novo;
+        if (bloco === "targets") {
+          if (q.target === velho) q.target = novo;
+          for (const r of q.rewards || []) if (r.item === velho) r.item = novo;
+        }
+      }
+      marcarSujo(); pintarConfig();
+    });
+    bindActions(body);
+  }
+
+  // ── JSON ────────────────────────────────────────────────────────────────
+  const conteudoJson = (arq) => (arq === d.idiomaBase ? st.raw : st.tr[arq]);
+  function pintarJson() {
+    const nome = (a) => (a === d.idiomaBase ? "quests.json" : `quests.${a}.json`);
+    $("#qbody").innerHTML = `<div class="panel"><div class="ph"><select id="qjsArq" class="sm">${QLANG.map(([k, l]) => `<option value="${k}" ${k === st.jsonArq ? "selected" : ""}>${nome(k)} (${l})</option>`).join("")}</select>
+        <span class="hint">"Salvar e aplicar" valida os três arquivos juntos antes de gravar.</span></div>
+      <textarea id="qJson" class="code" style="min-height:65vh">${esc(JSON.stringify(conteudoJson(st.jsonArq), null, 2))}</textarea></div>`;
+    $("#qjsArq").onchange = (e) => { if (!lerJson()) { e.target.value = st.jsonArq; return; } st.jsonArq = e.target.value; pintarJson(); };
+  }
+  function lerJson() {
+    const ta = $("#qJson");
+    if (!ta) return true;
+    try {
+      const v = JSON.parse(ta.value);
+      if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("o arquivo precisa ser um objeto");
+      if (st.jsonArq === d.idiomaBase && !Array.isArray(v.quests)) throw new Error("quests.json precisa ter quests: []");
+      if (JSON.stringify(v) !== JSON.stringify(conteudoJson(st.jsonArq))) {
+        if (st.jsonArq === d.idiomaBase) st.raw = v;
+        else { v.quests ||= {}; v.categories ||= {}; st.tr[st.jsonArq] = v; }
+        st.raw.quests ||= []; st.raw.actions ||= {}; st.raw.targets ||= {}; st.raw.rotation ||= {}; st.raw.categoryLabels ||= {};
+        marcarSujo();
+      }
+      return true;
+    } catch (e) {
+      toast(`JSON inválido: ${e.message}`, "err");
+      return false;
+    }
+  }
+
+  // ── Ações ───────────────────────────────────────────────────────────────
+  ACTIONS.qtab = (x) => {
+    if (st.tab === "json" && !lerJson()) return;
+    st.tab = x.t;
+    history.replaceState(null, "", `#/quests/${x.t}${x.t === "jogador" && st.playerId ? `/${st.playerId}` : ""}`);
+    paint();
+  };
+  ACTIONS.qcat = (x) => { st.cat = x.c; sessionStorage.setItem("decay.qcat", x.c); pintarMissoes(); };
+  ACTIONS.qnew = () => editarMissao({
+    id: "", category: st.cat, title: "", description: "",
+    action: Object.keys(st.raw.actions)[0] || "", target: "*", amount: 1,
+    rewards: [{ currency: "xp", amount: 50 }],
+  }, { novo: true });
+  ACTIONS.qedit = (x) => editarMissao(st.raw.quests.find((q) => q.id === x.id));
+  ACTIONS.qdup = (x) => {
+    const q = st.raw.quests.find((y) => y.id === x.id);
+    let n = 2;
+    while (st.raw.quests.some((y) => y.id === `${q.id}_${n}`)) n++;
+    editarMissao(q, { novo: true, id: `${q.id}_${n}` });
+  };
+  ACTIONS.qup = (x) => mover(x.id, -1);
+  ACTIONS.qdown = (x) => mover(x.id, 1);
+  ACTIONS.qrm = async (x) => {
+    const q = st.raw.quests.find((y) => y.id === x.id);
+    if (!(await confirmar("Excluir missão", `Remove <b>${esc(q.title)}</b> dos três idiomas. O progresso dos jogadores fica no banco, mas a missão some do jogo assim que você salvar.`, { danger: true, okLabel: "Excluir" }))) return;
+    st.raw.quests = st.raw.quests.filter((y) => y.id !== x.id);
+    for (const l of Object.keys(st.tr)) delete st.tr[l].quests[x.id];
+    marcarSujo(); pintarMissoes();
+  };
+
+  ACTIONS.qkvadd = async (x) => {
+    const bloco = x.b;
+    const nome = await confirmar(bloco === "actions" ? "Nova ação" : "Novo alvo", "Nome usado nas missões (letras, números e _).", { okLabel: "Adicionar", campo: { label: "Nome", placeholder: bloco === "actions" ? "kill_animal" : "couro" } });
+    if (nome == null) return;
+    const k = nome.trim();
+    if (!/^[A-Za-z0-9_]{1,48}$/.test(k)) return toast("Nome inválido.", "warn");
+    if (st.raw[bloco][k] !== undefined) return toast("Esse nome já existe.", "warn");
+    st.raw[bloco][k] = bloco === "actions" ? Math.max(0, ...Object.values(st.raw.actions)) + 1 : 0;
+    st.filtroAlvo = "";
+    marcarSujo(); pintarConfig();
+    if (bloco === "targets") toast("Preencha o ItemID do novo alvo.", "warn");
+  };
+  ACTIONS.qkvrm = (x) => { delete st.raw[x.b][x.k]; marcarSujo(); pintarConfig(); };
+
+  ACTIONS.qrotpick = (x) => {
+    const cat = x.c, c = d.categorias[cat];
+    const pool = (d.raw.quests || []).filter((q) => q.category === cat);
+    const ativas = new Set(c.ativas);
+    const box = modal(`<h2>${qCatNome(cat)} de ${esc(c.period)}</h2>
+      <p class="hint" style="margin:0 0 12px">Escolha as missões deste período. Normalmente são ${c.rotacao}. Quem já tinha progresso numa missão retirada perde ela de vista até ela voltar a ser sorteada.</p>
+      <div style="max-height:50vh;overflow:auto">${pool.map((q) => `<label class="check" style="margin-bottom:6px"><input type="checkbox" data-rp="${esc(q.id)}" ${ativas.has(q.id) ? "checked" : ""}>
+        <span><b>${esc(q.title)}</b> <span class="hint">${esc(q.description || "")}</span></span></label>`).join("")}</div>
+      <p class="hint" id="rpCnt" style="margin-top:8px"></p>
+      <div class="acts"><button class="btn" data-x>Cancelar</button><button class="btn p" id="rpGo">Aplicar agora</button></div>`, { wide: true });
+    const contar = () => { $("#rpCnt", box).textContent = `${$$("[data-rp]:checked", box).length} selecionada(s)`; };
+    $$("[data-rp]", box).forEach((el) => el.onchange = contar);
+    contar();
+    $("[data-x]", box).onclick = closeModal;
+    $("#rpGo", box).onclick = async () => {
+      const ids = $$("[data-rp]:checked", box).map((el) => el.dataset.rp);
+      if (!ids.length) return toast("Escolha ao menos uma missão.", "warn");
+      const r = await api("/quests/rotation", { method: "PUT", body: { category: cat, period: c.period, questIds: ids } });
+      c.ativas = r.ativas; c.manual = true;
+      closeModal(); toast(`${qCatNome(cat)}: ${r.ativas.length} missão(ões) ativas.`); pintarRotacao();
+    };
+  };
+  ACTIONS.qrotroll = async (x) => {
+    const cat = x.c, c = d.categorias[cat];
+    if (!(await confirmar("Sortear de novo", `Troca as ${qCatNome(cat).toLowerCase()} de <b>${esc(c.period)}</b> para todos os jogadores agora. Quem tinha progresso numa missão que sair deixa de vê-la.`, { danger: true, okLabel: "Sortear" }))) return;
+    const r = await api("/quests/rotation", { method: "DELETE", body: { category: cat, period: c.period } });
+    c.ativas = r.ativas; c.manual = false;
+    toast(`${qCatNome(cat)} sorteadas de novo.`); pintarRotacao();
+  };
+
+  ACTIONS.qstats = () => pintarStats();
+
+  ACTIONS.qjopen = () => {
+    const v = $("#qjId").value.trim();
+    if (!/^\d+$/.test(v)) return toast("Informe um playerId numérico.", "warn");
+    st.playerId = v;
+    history.replaceState(null, "", `#/quests/jogador/${v}`);
+    pintarJogador();
+  };
+  const ajustarProgresso = async (questId, period, progresso) => {
+    await api(`/quests/player/${st.playerId}`, { method: "PATCH", body: { questId, period, progresso } });
+    toast("Progresso atualizado."); pintarJogador();
+  };
+  ACTIONS.qjset = async (x) => {
+    const v = await confirmar("Definir progresso", `Novo progresso de <b>${esc(x.id)}</b> (0 a ${fmtN(+x.a)}).`, { okLabel: "Definir", campo: { label: "Progresso", value: "0" } });
+    if (v == null) return;
+    const n = parseInt(v, 10);
+    if (!(n >= 0)) return toast("Informe um número.", "warn");
+    ajustarProgresso(x.id, x.p, n);
+  };
+  ACTIONS.qjdone = (x) => ajustarProgresso(x.id, x.p, +x.a);
+  ACTIONS.qjzero = async (x) => {
+    if (!(await confirmar("Zerar missão", `Apaga o progresso de <b>${esc(x.id)}</b> em ${esc(x.p)}. Se ela já tinha sido resgatada, o jogador poderá concluir e resgatar de novo.`, { danger: true, okLabel: "Zerar" }))) return;
+    await api(`/quests/player/${st.playerId}`, { method: "DELETE", body: { questId: x.id, period: x.p } });
+    toast("Missão zerada."); pintarJogador();
+  };
+  ACTIONS.qjtut = async () => {
+    if (!(await confirmar("Refazer tutorial", "Apaga o progresso de todas as missões iniciais deste jogador. As recompensas podem ser ganhas de novo.", { danger: true, okLabel: "Refazer" }))) return;
+    const r = await api(`/quests/player/${st.playerId}`, { method: "DELETE", body: { category: "initial" } });
+    toast(`${r.removidas} etapa(s) apagada(s).`); pintarJogador();
+  };
+
+  ACTIONS.qsave = async () => {
+    if (st.tab === "json" && !lerJson()) return;
+    const box = $("#qErros");
+    box.innerHTML = "";
+    const r = await qSalvarNoMaster({ raw: st.raw, traducoes: st.tr });
+    if (!r.ok) {
+      box.innerHTML = `<div class="dangerbox" style="margin-bottom:12px"><b>Nada foi salvo.</b> ${esc(r.error || "")}${(r.erros || []).length ? `<br>${r.erros.map(esc).join("<br>")}` : ""}</div>`;
+      toast("Corrija os erros antes de salvar.", "err");
+      return;
+    }
+    toast(`Missões salvas · ${fmtN(r.count)} carregadas.`);
+    if (r.avisos?.length) toast(r.avisos.join(" · "), "warn", 9000);
+    st.dirty = false;
+    route();
+  };
+  ACTIONS.qreload = async () => {
+    if (st.dirty && !(await confirmar("Descartar rascunho", "As alterações não salvas serão perdidas.", { danger: true, okLabel: "Descartar" }))) return;
+    const r = await api("/quests/reload", { method: "POST", body: {} });
+    toast(`${fmtN(r.count)} missões carregadas do disco.`);
+    route();
+  };
+
+  paint();
+};
+
 /* ═══════════════════════════════ CONFIG ═══════════════════════════════ */
 const CFG_SCHEMA = [
   ["Servidor", [
@@ -2073,7 +2841,7 @@ VIEWS.audit = async function () {
     bindActions($("#alist"));
   }
   setMain(`<div class="top"><div><h1>Auditoria</h1><p>Tudo que foi feito por este painel: quem, quando, em quem.</p></div>
-    <div class="row"><select id="aact" class="sm"><option value="">Toda ação</option>${["player", "coins", "ban", "server", "order", "skins", "roulette", "packages", "config", "push", "play"].map((a) => `<option>${a}</option>`).join("")}</select><input type="text" id="atgt" class="sm" placeholder="alvo (playerId, orderId…)" style="width:200px"></div></div><div id="alist"></div>`);
+    <div class="row"><select id="aact" class="sm"><option value="">Toda ação</option>${["player", "coins", "ban", "server", "order", "skins", "roulette", "packages", "quests", "config", "push", "play"].map((a) => `<option>${a}</option>`).join("")}</select><input type="text" id="atgt" class="sm" placeholder="alvo (playerId, orderId…)" style="width:200px"></div></div><div id="alist"></div>`);
   $("#aact").onchange = (e) => { st.action = e.target.value; st.offset = 0; load(); };
   $("#atgt").oninput = () => { st.target = $("#atgt").value.trim(); st.offset = 0; load(); };
   ACTIONS.page = (d) => { st.offset = Number(d.offset); load(); };

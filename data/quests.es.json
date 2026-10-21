@@ -1,0 +1,623 @@
+{
+  "language": "es",
+  "categories": {
+    "initial": "Tutorial",
+    "daily": "Diarias",
+    "weekly": "Semanales",
+    "monthly": "Mensuales"
+  },
+  "quests": {
+    "ini_01_madeira_100": {
+      "title": "Primeros pasos",
+      "description": "Recoge 100 de madera golpeando árboles"
+    },
+    "ini_02_node_madeira": {
+      "title": "Derribando el primer árbol",
+      "description": "Tala un árbol por completo"
+    },
+    "ini_03_craft_picareta": {
+      "title": "Herramienta de minería",
+      "description": "Fabrica el pico básico para minar"
+    },
+    "ini_04_pedra_100": {
+      "title": "Piedra sobre piedra",
+      "description": "Usa el pico para recoger 100 de piedra"
+    },
+    "ini_05_node_pedra": {
+      "title": "Rompiendo piedra",
+      "description": "Extrae un nodo de piedra por completo"
+    },
+    "ini_06_craft_machado": {
+      "title": "Herramienta de leñador",
+      "description": "Fabrica un hacha básica"
+    },
+    "ini_07_nodes_madeira_2": {
+      "title": "Reserva de madera",
+      "description": "Tala 2 árboles usando el hacha"
+    },
+    "ini_08_recursos_3": {
+      "title": "Supervivencia básica",
+      "description": "Recoge 3 recursos del suelo (ej: bayas)"
+    },
+    "ini_09_craft_planta": {
+      "title": "El proyecto",
+      "description": "Fabrica un plano de construcción"
+    },
+    "ini_10_craft_martelo": {
+      "title": "Manos a la obra",
+      "description": "Fabrica un martillo de construcción"
+    },
+    "ini_11_fundacoes_4": {
+      "title": "Un lugar al que llamar hogar",
+      "description": "Construye 4 cimientos en un cuadrado 2x2"
+    },
+    "ini_12_paredes_7": {
+      "title": "Levantando paredes",
+      "description": "Construye 7 paredes dejando 1 hueco libre"
+    },
+    "ini_13_parede_porta": {
+      "title": "Entrada",
+      "description": "Construye 1 pared con puerta en el hueco"
+    },
+    "ini_14_tetos_4": {
+      "title": "Un techo sobre tu cabeza",
+      "description": "Construye 4 techos para cerrar la base"
+    },
+    "ini_15_craft_porta": {
+      "title": "Cerrando la casa",
+      "description": "Fabrica una puerta de madera"
+    },
+    "ini_16_place_porta": {
+      "title": "Puerta en su lugar",
+      "description": "Coloca la puerta en la pared con puerta"
+    },
+    "ini_17_craft_armario": {
+      "title": "Reclamando territorio",
+      "description": "Fabrica un armario de privilegios"
+    },
+    "ini_18_place_armario": {
+      "title": "Territorio",
+      "description": "Pon el armario de privilegios en la base"
+    },
+    "ini_19_nodes_madeira_3": {
+      "title": "Leñador de verdad",
+      "description": "Tala 3 árboles por completo"
+    },
+    "ini_20_nodes_pedra_3": {
+      "title": "Cantero",
+      "description": "Extrae 3 nodos de piedra por completo"
+    },
+    "ini_21_nodes_metal_3": {
+      "title": "Veta de metal",
+      "description": "Extrae 3 nodos de metal por completo"
+    },
+    "ini_22_nodes_enxofre_3": {
+      "title": "Olor a azufre",
+      "description": "Extrae 3 nodos de azufre por completo"
+    },
+    "ini_23_craft_fornalha": {
+      "title": "Fuego y metal",
+      "description": "Fabrica un horno"
+    },
+    "ini_24_place_fornalha": {
+      "title": "Fundición casera",
+      "description": "Coloca el horno en tu base"
+    },
+    "ini_25_craft_bau": {
+      "title": "Espacio para el botín",
+      "description": "Fabrica un cofre grande"
+    },
+    "ini_26_place_bau": {
+      "title": "Guardando el botín",
+      "description": "Coloca el cofre grande en tu base"
+    },
+    "d_madeira_600": {
+      "title": "Leñador",
+      "description": "Recoge 600 de madera"
+    },
+    "d_madeira_1500": {
+      "title": "Motosierra humana",
+      "description": "Recoge 1500 de madera"
+    },
+    "d_pedra_400": {
+      "title": "Minero",
+      "description": "Recoge 400 de piedra"
+    },
+    "d_pedra_1200": {
+      "title": "Martillo neumático",
+      "description": "Recoge 1200 de piedra"
+    },
+    "d_metal_150": {
+      "title": "Buscador de metal",
+      "description": "Recoge 150 de metal"
+    },
+    "d_metal_400": {
+      "title": "Veta metálica",
+      "description": "Recoge 400 de metal"
+    },
+    "d_enxofre_150": {
+      "title": "Alquimista",
+      "description": "Recoge 150 de azufre"
+    },
+    "d_enxofre_400": {
+      "title": "Pólvora en potencia",
+      "description": "Recoge 400 de azufre"
+    },
+    "d_nodes_madeira_5": {
+      "title": "Claro del bosque",
+      "description": "Tala 5 árboles por completo"
+    },
+    "d_nodes_pedra_4": {
+      "title": "Partiendo rocas",
+      "description": "Extrae 4 nodos de piedra por completo"
+    },
+    "d_nodes_metal_3": {
+      "title": "Cazador de mineral",
+      "description": "Extrae 3 nodos de metal por completo"
+    },
+    "d_nodes_enxofre_3": {
+      "title": "Olfato amarillo",
+      "description": "Extrae 3 nodos de azufre por completo"
+    },
+    "d_nodes_8": {
+      "title": "Rompelotodo",
+      "description": "Extrae 8 nodos cualesquiera"
+    },
+    "d_recursos_15": {
+      "title": "Recolector",
+      "description": "Recoge 15 recursos del suelo"
+    },
+    "d_pano_10": {
+      "title": "Fibras naturales",
+      "description": "Recoge 10 de tela del suelo"
+    },
+    "d_frutinhas_10": {
+      "title": "Desayuno",
+      "description": "Recoge 10 bayas"
+    },
+    "d_construir_10": {
+      "title": "Maestro de obras",
+      "description": "Construye 10 piezas cualesquiera"
+    },
+    "d_paredes_6": {
+      "title": "Muralla",
+      "description": "Construye 6 paredes"
+    },
+    "d_fundacoes_4": {
+      "title": "Cimentación",
+      "description": "Construye 4 cimientos"
+    },
+    "d_tetos_4": {
+      "title": "Cubierta",
+      "description": "Construye 4 techos"
+    },
+    "d_triangulares_4": {
+      "title": "Geometría de base",
+      "description": "Construye 4 cimientos triangulares"
+    },
+    "d_janelas_2": {
+      "title": "Vista privilegiada",
+      "description": "Construye 2 ventanas"
+    },
+    "d_escada_1": {
+      "title": "Segundo piso",
+      "description": "Construye 1 escalera"
+    },
+    "d_craft_5": {
+      "title": "Artesano",
+      "description": "Fabrica 5 objetos cualesquiera"
+    },
+    "d_craft_portas_2": {
+      "title": "Carpintero",
+      "description": "Fabrica 2 puertas de madera"
+    },
+    "d_craft_municao_30": {
+      "title": "Recarga",
+      "description": "Fabrica 30 municiones de clavos"
+    },
+    "d_place_saco_dormir": {
+      "title": "Plan B",
+      "description": "Coloca 1 saco de dormir"
+    },
+    "d_place_3": {
+      "title": "Decorador",
+      "description": "Coloca 3 objetos cualesquiera"
+    },
+    "d_kill_1": {
+      "title": "Primera sangre",
+      "description": "Elimina a 1 jugador"
+    },
+    "d_kill_3": {
+      "title": "Cazador",
+      "description": "Elimina a 3 jugadores"
+    },
+    "d_kill_5": {
+      "title": "Depredador",
+      "description": "Elimina a 5 jugadores"
+    },
+    "w_madeira_5000": {
+      "title": "Aserradero",
+      "description": "Recoge 5000 de madera"
+    },
+    "w_pedra_4000": {
+      "title": "Cantera",
+      "description": "Recoge 4000 de piedra"
+    },
+    "w_metal_1500": {
+      "title": "Mina de hierro",
+      "description": "Recoge 1500 de metal"
+    },
+    "w_enxofre_1500": {
+      "title": "Minas de azufre",
+      "description": "Recoge 1500 de azufre"
+    },
+    "w_nodes_40": {
+      "title": "Deforestación",
+      "description": "Extrae 40 nodos cualesquiera"
+    },
+    "w_nodes_metal_20": {
+      "title": "Prospector",
+      "description": "Extrae 20 nodos de metal por completo"
+    },
+    "w_nodes_enxofre_20": {
+      "title": "Ruta del azufre",
+      "description": "Extrae 20 nodos de azufre por completo"
+    },
+    "w_nodes_madeira_30": {
+      "title": "¡Árbol va!",
+      "description": "Tala 30 árboles por completo"
+    },
+    "w_recursos_100": {
+      "title": "Forrajeador",
+      "description": "Recoge 100 recursos del suelo"
+    },
+    "w_pano_60": {
+      "title": "Tejedor",
+      "description": "Recoge 60 de tela del suelo"
+    },
+    "w_frutinhas_60": {
+      "title": "Huerto salvaje",
+      "description": "Recoge 60 bayas"
+    },
+    "w_fundacoes_20": {
+      "title": "Expansión",
+      "description": "Construye 20 cimientos"
+    },
+    "w_paredes_40": {
+      "title": "Gran muralla",
+      "description": "Construye 40 paredes"
+    },
+    "w_tetos_20": {
+      "title": "Pisos",
+      "description": "Construye 20 techos"
+    },
+    "w_construir_80": {
+      "title": "Constructora",
+      "description": "Construye 80 piezas cualesquiera"
+    },
+    "w_portas_duplas_3": {
+      "title": "Garaje",
+      "description": "Construye 3 paredes de puerta doble"
+    },
+    "w_meias_paredes_10": {
+      "title": "Parapeto",
+      "description": "Construye 10 medias paredes"
+    },
+    "w_craft_30": {
+      "title": "Taller",
+      "description": "Fabrica 30 objetos cualesquiera"
+    },
+    "w_craft_municao_200": {
+      "title": "Polvorín",
+      "description": "Fabrica 200 municiones de clavos"
+    },
+    "w_craft_arma_prego": {
+      "title": "Armado y peligroso",
+      "description": "Fabrica 1 pistola de clavos"
+    },
+    "w_craft_bancada_pesquisa": {
+      "title": "Científico",
+      "description": "Fabrica 1 mesa de investigación"
+    },
+    "w_place_bau_3": {
+      "title": "Almacén",
+      "description": "Coloca 3 cofres grandes"
+    },
+    "w_place_fornalha_2": {
+      "title": "Línea de fundición",
+      "description": "Coloca 2 hornos"
+    },
+    "w_place_saco_dormir_4": {
+      "title": "Red de reapariciones",
+      "description": "Coloca 4 sacos de dormir"
+    },
+    "w_kill_10": {
+      "title": "Amenaza regional",
+      "description": "Elimina a 10 jugadores"
+    },
+    "w_kill_25": {
+      "title": "Terror de la isla",
+      "description": "Elimina a 25 jugadores"
+    },
+    "w_kill_50": {
+      "title": "Señor de la guerra",
+      "description": "Elimina a 50 jugadores"
+    },
+    "m_madeira_30000": {
+      "title": "Maderera",
+      "description": "Recoge 30000 de madera"
+    },
+    "m_pedra_25000": {
+      "title": "Imperio de piedra",
+      "description": "Recoge 25000 de piedra"
+    },
+    "m_metal_8000": {
+      "title": "Fundición",
+      "description": "Recoge 8000 de metal"
+    },
+    "m_enxofre_8000": {
+      "title": "Barón del azufre",
+      "description": "Recoge 8000 de azufre"
+    },
+    "m_nodes_250": {
+      "title": "Fuerza de la naturaleza",
+      "description": "Extrae 250 nodos cualesquiera"
+    },
+    "m_nodes_metal_100": {
+      "title": "Corazón de hierro",
+      "description": "Extrae 100 nodos de metal por completo"
+    },
+    "m_nodes_enxofre_100": {
+      "title": "Explosivo",
+      "description": "Extrae 100 nodos de azufre por completo"
+    },
+    "m_recursos_500": {
+      "title": "Señor de la cosecha",
+      "description": "Recoge 500 recursos del suelo"
+    },
+    "m_construir_300": {
+      "title": "Fortaleza",
+      "description": "Construye 300 piezas cualesquiera"
+    },
+    "m_fundacoes_100": {
+      "title": "Complejo",
+      "description": "Construye 100 cimientos"
+    },
+    "m_craft_150": {
+      "title": "Industria",
+      "description": "Fabrica 150 objetos cualesquiera"
+    },
+    "m_craft_municao_1000": {
+      "title": "Arsenal",
+      "description": "Fabrica 1000 municiones de clavos"
+    },
+    "m_craft_bancada_2": {
+      "title": "Tecnología avanzada",
+      "description": "Fabrica 1 banco de trabajo nivel 2"
+    },
+    "m_craft_desert_eagle": {
+      "title": "Calibre pesado",
+      "description": "Fabrica 1 Desert Eagle"
+    },
+    "m_place_bau_15": {
+      "title": "Bóveda del clan",
+      "description": "Coloca 15 cofres grandes"
+    },
+    "m_place_fornalha_8": {
+      "title": "Siderúrgica",
+      "description": "Coloca 8 hornos"
+    },
+    "m_kill_100": {
+      "title": "Leyenda del PvP",
+      "description": "Elimina a 100 jugadores"
+    },
+    "m_kill_250": {
+      "title": "Segador",
+      "description": "Elimina a 250 jugadores"
+    },
+    "d_aranha_3": {
+      "title": "Fumigación",
+      "description": "Elimina 3 arañas"
+    },
+    "d_aranha_5": {
+      "title": "Telaraña rota",
+      "description": "Elimina 5 arañas"
+    },
+    "d_aranha_10": {
+      "title": "Aracnofobia",
+      "description": "Elimina 10 arañas"
+    },
+    "d_aranha_15": {
+      "title": "Ocho patas menos",
+      "description": "Elimina 15 arañas"
+    },
+    "d_aranha_25": {
+      "title": "Exterminador",
+      "description": "Elimina 25 arañas"
+    },
+    "d_cobra_3": {
+      "title": "Mira dónde pisas",
+      "description": "Elimina 3 serpientes"
+    },
+    "d_cobra_5": {
+      "title": "Antídoto",
+      "description": "Elimina 5 serpientes"
+    },
+    "d_cobra_8": {
+      "title": "Sin veneno",
+      "description": "Elimina 8 serpientes"
+    },
+    "d_cobra_12": {
+      "title": "Encantador de serpientes",
+      "description": "Elimina 12 serpientes"
+    },
+    "d_cobra_20": {
+      "title": "Mangosta",
+      "description": "Elimina 20 serpientes"
+    },
+    "d_veado_2": {
+      "title": "Caza matutina",
+      "description": "Caza 2 ciervos"
+    },
+    "d_veado_3": {
+      "title": "Pies ligeros",
+      "description": "Caza 3 ciervos"
+    },
+    "d_veado_5": {
+      "title": "Cena asegurada",
+      "description": "Caza 5 ciervos"
+    },
+    "d_veado_8": {
+      "title": "Rastreador",
+      "description": "Caza 8 ciervos"
+    },
+    "d_veado_12": {
+      "title": "Puntería certera",
+      "description": "Caza 12 ciervos"
+    },
+    "d_animais_10": {
+      "title": "Safari",
+      "description": "Caza 10 animales cualesquiera"
+    },
+    "d_animais_30": {
+      "title": "Vida salvaje",
+      "description": "Caza 30 animales cualesquiera"
+    },
+    "w_aranha_30": {
+      "title": "Cazaarañas",
+      "description": "Elimina 30 arañas"
+    },
+    "w_aranha_50": {
+      "title": "Nido despejado",
+      "description": "Elimina 50 arañas"
+    },
+    "w_aranha_80": {
+      "title": "Fin de las telarañas",
+      "description": "Elimina 80 arañas"
+    },
+    "w_aranha_120": {
+      "title": "Pesadilla arácnida",
+      "description": "Elimina 120 arañas"
+    },
+    "w_aranha_200": {
+      "title": "Destructor de colonias",
+      "description": "Elimina 200 arañas"
+    },
+    "w_cobra_25": {
+      "title": "Cazador de serpientes",
+      "description": "Elimina 25 serpientes"
+    },
+    "w_cobra_40": {
+      "title": "Botas de piel de serpiente",
+      "description": "Elimina 40 serpientes"
+    },
+    "w_cobra_70": {
+      "title": "Nido de víboras",
+      "description": "Elimina 70 serpientes"
+    },
+    "w_cobra_100": {
+      "title": "Colmillos rotos",
+      "description": "Elimina 100 serpientes"
+    },
+    "w_cobra_150": {
+      "title": "Matador de serpientes",
+      "description": "Elimina 150 serpientes"
+    },
+    "w_veado_15": {
+      "title": "Temporada de caza",
+      "description": "Caza 15 ciervos"
+    },
+    "w_veado_25": {
+      "title": "Despensa llena",
+      "description": "Caza 25 ciervos"
+    },
+    "w_veado_40": {
+      "title": "Corredor del bosque",
+      "description": "Caza 40 ciervos"
+    },
+    "w_veado_60": {
+      "title": "Cazador sigiloso",
+      "description": "Caza 60 ciervos"
+    },
+    "w_veado_90": {
+      "title": "Nadie escapa",
+      "description": "Caza 90 ciervos"
+    },
+    "w_animais_100": {
+      "title": "Cazador de bestias",
+      "description": "Caza 100 animales cualesquiera"
+    },
+    "w_animais_250": {
+      "title": "Cadena alimentaria",
+      "description": "Caza 250 animales cualesquiera"
+    },
+    "m_aranha_150": {
+      "title": "Control de plagas",
+      "description": "Elimina 150 arañas"
+    },
+    "m_aranha_300": {
+      "title": "Isla sin telarañas",
+      "description": "Elimina 300 arañas"
+    },
+    "m_aranha_500": {
+      "title": "Cazador de arácnidos",
+      "description": "Elimina 500 arañas"
+    },
+    "m_aranha_800": {
+      "title": "Azote de las arañas",
+      "description": "Elimina 800 arañas"
+    },
+    "m_aranha_1200": {
+      "title": "Extinción arácnida",
+      "description": "Elimina 1200 arañas"
+    },
+    "m_cobra_120": {
+      "title": "Herpetólogo",
+      "description": "Elimina 120 serpientes"
+    },
+    "m_cobra_250": {
+      "title": "Tierra sin serpientes",
+      "description": "Elimina 250 serpientes"
+    },
+    "m_cobra_400": {
+      "title": "Inmune al veneno",
+      "description": "Elimina 400 serpientes"
+    },
+    "m_cobra_600": {
+      "title": "Azote de las serpientes",
+      "description": "Elimina 600 serpientes"
+    },
+    "m_cobra_1000": {
+      "title": "San Patricio",
+      "description": "Elimina 1000 serpientes"
+    },
+    "m_veado_80": {
+      "title": "Cazador experimentado",
+      "description": "Caza 80 ciervos"
+    },
+    "m_veado_150": {
+      "title": "Curtiduría",
+      "description": "Caza 150 ciervos"
+    },
+    "m_veado_250": {
+      "title": "Rey del bosque",
+      "description": "Caza 250 ciervos"
+    },
+    "m_veado_400": {
+      "title": "Fantasma del bosque",
+      "description": "Caza 400 ciervos"
+    },
+    "m_veado_600": {
+      "title": "Cazador legendario",
+      "description": "Caza 600 ciervos"
+    },
+    "m_animais_750": {
+      "title": "Superdepredador",
+      "description": "Caza 750 animales cualesquiera"
+    },
+    "m_animais_2000": {
+      "title": "Señor de las bestias",
+      "description": "Caza 2000 animales cualesquiera"
+    }
+  }
+}
