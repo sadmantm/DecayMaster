@@ -360,7 +360,20 @@ async function buscarCmd() {
   if (/^dc_\d+_/.test(q)) cmdItems.push({ href: `#/orders/mp/${q}`, t: `Pedido MP ${q}`, s: "Mercado Pago" });
   try {
     const r = await api(`/players?q=${encodeURIComponent(q)}&limit=8`, { silent: true });
-    for (const p of r.rows) cmdItems.push({ href: `#/players/${p.playerId}`, t: `${p.playerName || "(sem nome)"}`, s: `${p.playerId} · ${p.accountType} · lvl ${p.level}${p.banned ? " · BANIDO" : ""}` });
+    if (r.porDispositivo > 0) {
+      cmdItems.push({
+        href: `#/players/q/${encodeURIComponent(q)}`,
+        t: `Ver todas as ${fmtN(r.total)} conta(s) para "${q}"`,
+        s: `${fmtN(r.porDispositivo)} por dispositivo`,
+      });
+    }
+    for (const p of r.rows) {
+      cmdItems.push({
+        href: `#/players/${p.playerId}`,
+        t: `${p.playerName || "(sem nome)"}`,
+        s: `${p.playerId} · ${p.accountType} · lvl ${p.level}${p.banned ? " · BANIDO" : ""}${p.deviceMatch ? ` · ${p.deviceMatch}` : ""}`,
+      });
+    }
   } catch { /* ignora */ }
   if (!cmdItems.length) cmdItems.push({ href: `#/players/q/${encodeURIComponent(q)}`, t: `Nenhum jogador para "${q}"`, s: "abrir lista" });
   paintCmd(); drop.classList.add("on");

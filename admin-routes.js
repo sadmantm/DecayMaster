@@ -1209,16 +1209,47 @@ function registrarRotasAdmin(app, deps) {
       ? req.query.sort : "createdAt";
     const dir = req.query.dir === "asc" ? "ASC" : "DESC";
 
+    // ── dispositivos (fingerprints.json): modelo, deviceId, hardwareId, IP ──
+    const norm = (s) => String(s ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+    const casaDispositivo = new Map(); // playerId -> descrição do dispositivo que casou
+    if (q.length >= 2) {
+      const nq = norm(q);
+      const parcialId = nq.length >= 6; // deviceId/hardwareId parcial só com 6+ caracteres
+      for (const rec of banStore.fingerprints.values()) {
+        for (const d of rec.devices || []) {
+          const model = norm(d.model), plat = norm(d.platform);
+          const dev = norm(d.deviceId), hw = norm(d.hardwareId), ip = norm(d.ip);
+          let motivo = null;
+          if (model && (model.includes(nq) || `${plat} ${model}`.includes(nq))) motivo = `${d.platform || "?"} ${d.model}`;
+          else if (dev && (dev === nq || (parcialId && dev.includes(nq)))) motivo = `deviceId ${d.deviceId}`;
+          else if (hw && (hw === nq || (parcialId && hw.includes(nq)))) motivo = `hardwareId ${d.hardwareId}`;
+          else if (ip && (ip === nq || (nq.includes(".") && ip.startsWith(nq)))) motivo = `IP ${d.ip}`;
+          if (motivo) {
+            casaDispositivo.set(Number(rec.playerId), motivo);
+            break;
+          }
+        }
+        if (casaDispositivo.size >= 500) break;
+      }
+    }
+    const idsDispositivo = [...casaDispositivo.keys()].filter(Number.isInteger);
+
     const where = [];
     const params = [];
     if (q) {
+      const partes = [];
       if (/^\d+$/.test(q)) {
-        where.push(`(a.playerId = ? OR a.playerName LIKE ? COLLATE NOCASE)`);
+        partes.push(`a.playerId = ?`, `a.playerName LIKE ? COLLATE NOCASE`);
         params.push(Number(q), `%${q}%`);
       } else {
-        where.push(`(a.playerName LIKE ? COLLATE NOCASE OR a.email LIKE ? COLLATE NOCASE OR a.guestDeviceId = ?)`);
+        partes.push(`a.playerName LIKE ? COLLATE NOCASE`, `a.email LIKE ? COLLATE NOCASE`, `a.guestDeviceId = ?`);
         params.push(`%${q}%`, `%${q}%`, q);
       }
+      if (idsDispositivo.length) {
+        partes.push(`a.playerId IN (${idsDispositivo.map(() => "?").join(",")})`);
+        params.push(...idsDispositivo);
+      }
+      where.push(`(${partes.join(" OR ")})`);
     }
     if (tipo === "guest" || tipo === "email") {
       where.push(`a.accountType = ?`);
@@ -1239,8 +1270,9 @@ function registrarRotasAdmin(app, deps) {
 
     for (const p of rows) {
       p.banned = !!banStore.isPlayerBanned(p.playerId);
+      p.deviceMatch = casaDispositivo.get(p.playerId) || null;
     }
-    res.json({ ok: true, rows, total, limit, offset });
+    res.json({ ok: true, rows, total, limit, offset, porDispositivo: idsDispositivo.length });
   }));
 
   app.get(`${r}/players/:id`, adminAuth, wrap((req, res) => {
