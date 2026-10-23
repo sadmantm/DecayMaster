@@ -295,33 +295,67 @@ class BanStore {
     this.config = config;
     this.logger = logger;
 
-    this.banByIp = true;
-
-    const fs = require("fs");
-    const path = require("path");
+    const cfg = config.bans || {};
+    this.propagarEvasao = cfg.propagateEvasion !== false;
+    // IP NUNCA bloqueia login sozinho (CGNAT). Só bloqueia CRIAÇÃO de conta
+    // vinda do IP de um ban recente.
+    this.ipBloqueiaCriacao = cfg.ipBlocksAccountCreation !== false;
+    this.ipJanela = (cfg.ipWindowHours ?? 168) * 3600;
 
     const dataDir = path.join(process.cwd(), "data");
     if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
     this.bansFile = path.join(dataDir, "bans.json");
-    // fingerprints por playerId — histórico de dispositivos vistos
     this.fingerprintsFile = path.join(dataDir, "fingerprints.json");
-    // modelos de dispositivo banidos (chave = modelo normalizado)
     this.modelBansFile = path.join(dataDir, "model-bans.json");
+    this.recallFile = path.join(dataDir, "recall-tokens.json");
 
     this.bans = this._load(this.bansFile);                 // banId -> banRecord
     this.fingerprints = this._load(this.fingerprintsFile); // playerId -> fpRecord
     this.modelBans = this._load(this.modelBansFile);       // modelKey -> modelBanRecord
-    this._modelSaveTimer = null;
+    this.recallTokens = this._load(this.recallFile);       // playerId -> [{token, at, deviceId}]
+
+    this._timers = new Map();
+
+    // Callbacks configurados no app.js (revogar sessão, gravar device recall).
+    this.aoBanir = null;
+    this.aoDesbanir = null;
+
+    this._reindexar();
   }
 
-  /** "  INFINIX  Infinix X6725 " → "infinix infinix x6725" */
+  // ===== normalização =====
+
   static normModel(s) {
     return String(s ?? "").trim().replace(/\s+/g, " ").toLowerCase();
   }
 
+  static normIp(ip) {
+    if (!ip) return null;
+    let s = String(ip).trim().toLowerCase();
+    if (s.startsWith("::ffff:")) s = s.slice(7);
+    return s || null;
+  }
+
+  /** IPv4 -> /24, IPv6 -> /64. */
+  static prefixoRede(ip) {
+    const s = BanStore.normIp(ip);
+    if (!s) return null;
+    if (s.includes(".")) {
+      const p = s.split(".");
+      return p.length === 4 ? `${p[0]}.${p[1]}.${p[2]}.0/24` : null;
+    }
+    const [cabeca, cauda = ""] = s.split("::");
+    const a = cabeca ? cabeca.split(":") : [];
+    const b = s.includes("::") && cauda ? cauda.split(":") : [];
+    const zeros = s.includes("::") ? Array(Math.max(0, 8 - a.length - b.length)).fill("0") : [];
+    const full = [...a, ...zeros, ...b];
+    return full.slice(0, 4).join(":") + "::/64";
+  }
+
+  // ===== persistência =====
+
   _load(filePath) {
-    const fs = require("fs");
     try {
       if (fs.existsSync(filePath)) {
         return new Map(Object.entries(JSON.parse(fs.readFileSync(filePath, "utf8"))));
@@ -333,73 +367,199 @@ class BanStore {
   }
 
   _save(filePath, map) {
-    const fs = require("fs");
     try {
-      fs.writeFileSync(filePath, JSON.stringify(Object.fromEntries(map), null, 2), "utf8");
+      const tmp = filePath + ".tmp";
+      fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(map), null, 2), "utf8");
+      fs.renameSync(tmp, filePath); // escrita atômica: crash no meio não corrompe o arquivo
     } catch (e) {
       console.error(`[BanStore] Falha ao salvar ${filePath}:`, e.message);
     }
   }
 
-  // Contador de tentativas: salva no máximo a cada 5s (o hacker pode spammar login).
-  _saveModelBansSoon() {
-    if (this._modelSaveTimer) return;
-    this._modelSaveTimer = setTimeout(() => {
-      this._modelSaveTimer = null;
-      this._save(this.modelBansFile, this.modelBans);
-    }, 5000);
-    this._modelSaveTimer.unref?.();
+  _saveSoon(filePath, map, delayMs = 2000) {
+    if (this._timers.has(filePath)) return;
+    const t = setTimeout(() => {
+      this._timers.delete(filePath);
+      this._save(filePath, map);
+    }, delayMs);
+    t.unref?.();
+    this._timers.set(filePath, t);
   }
 
-  // Chamado em todo login/registro para guardar o dispositivo daquele player.
-  // Mantém um histórico (um player pode logar de vários aparelhos).
+  _saveModelBansSoon() {
+    this._saveSoon(this.modelBansFile, this.modelBans, 5000);
+  }
+
+  /** Chame no shutdown do master. */
+  flush() {
+    for (const t of this._timers.values()) clearTimeout(t);
+    this._timers.clear();
+    this._save(this.bansFile, this.bans);
+    this._save(this.fingerprintsFile, this.fingerprints);
+    this._save(this.modelBansFile, this.modelBans);
+    this._save(this.recallFile, this.recallTokens);
+  }
+
+  // ===== índices (busca O(1) em vez de varrer todos os bans) =====
+
+  _reindexar() {
+    this._idx = {
+      deviceId: new Map(),
+      hardwareId: new Map(),
+      ip: new Map(),
+      rede: new Map(),
+      player: new Map(),
+    };
+    for (const ban of this.bans.values()) if (ban.active) this._indexar(ban);
+  }
+
+  _addIdx(map, chave, banId) {
+    if (!chave) return;
+    let s = map.get(chave);
+    if (!s) map.set(chave, (s = new Set()));
+    s.add(banId);
+  }
+
+  _indexar(ban) {
+    for (const d of ban.deviceIds || []) this._addIdx(this._idx.deviceId, d, ban.banId);
+    for (const h of ban.hardwareIds || []) this._addIdx(this._idx.hardwareId, h, ban.banId);
+    for (const ip of ban.ips || []) {
+      this._addIdx(this._idx.ip, BanStore.normIp(ip), ban.banId);
+      this._addIdx(this._idx.rede, BanStore.prefixoRede(ip), ban.banId);
+    }
+    this._addIdx(this._idx.player, String(ban.playerId), ban.banId);
+  }
+
+  _bansAtivos(map, chave) {
+    const ids = chave ? map.get(chave) : null;
+    if (!ids) return [];
+    const out = [];
+    for (const id of ids) {
+      const b = this.bans.get(id);
+      if (b?.active) out.push(b);
+    }
+    return out;
+  }
+
+  // ===== fingerprints =====
+
   recordFingerprint(playerId, fp) {
     const key = String(playerId);
     const now = nowSeconds();
+    const ip = BanStore.normIp(fp.ip);
     const existing = this.fingerprints.get(key) || { playerId, devices: [] };
 
-    // fp = { deviceId, hardwareId, ip, platform, model }
     const already = existing.devices.find(
       (d) => d.deviceId === fp.deviceId && d.hardwareId === fp.hardwareId,
     );
 
     if (already) {
       already.lastSeen = now;
-      already.ip = fp.ip;          // atualiza último IP visto
+      already.ip = ip;
       already.seenCount = (already.seenCount || 1) + 1;
       if (fp.model) already.model = fp.model;
       if (fp.platform) already.platform = fp.platform;
+      already.integrityOk = fp.integrityOk === true;
     } else {
       existing.devices.push({
         deviceId: fp.deviceId || null,
         hardwareId: fp.hardwareId || null,
-        ip: fp.ip || null,
+        ip,
         platform: fp.platform || null,
         model: fp.model || null,
+        integrityOk: fp.integrityOk === true,
         firstSeen: now,
         lastSeen: now,
         seenCount: 1,
       });
+      // limita o histórico: um spoofer gera IDs novos a cada login
+      if (existing.devices.length > 50) existing.devices.splice(0, existing.devices.length - 50);
     }
 
     this.fingerprints.set(key, existing);
-    this._save(this.fingerprintsFile, this.fingerprints);
+    this._saveSoon(this.fingerprintsFile, this.fingerprints);
+
+    if (fp.integrityToken) this._guardarTokenRecall(playerId, fp.integrityToken, fp.deviceId);
   }
 
-  // Retorna o banRecord se este fingerprint casar com algum ban ativo, senão null.
-  // Usado antes de login E de criação de conta.
-  checkBanned(fp) {
-    for (const ban of this.bans.values()) {
-      if (!ban.active) continue;
+  // Guarda o último token verificado por aparelho: no ban, ele grava o device recall.
+  _guardarTokenRecall(playerId, token, deviceId) {
+    const key = String(playerId);
+    const agora = nowSeconds();
+    const lista = (this.recallTokens.get(key) || []).filter(
+      (t) => agora - t.at < 13 * 86400 && t.deviceId !== deviceId,
+    );
+    lista.unshift({ token, at: agora, deviceId: deviceId || null });
+    this.recallTokens.set(key, lista.slice(0, 5));
+    this._saveSoon(this.recallFile, this.recallTokens);
+  }
 
-      if (fp.deviceId && ban.deviceIds.includes(fp.deviceId)) return ban;
-      if (fp.hardwareId && ban.hardwareIds.includes(fp.hardwareId)) return ban;
-      if (this.banByIp && fp.ip && ban.ips.includes(fp.ip)) return ban;
+  /** Tokens ainda dentro da janela de 14 dias do Google (margem de 1 dia). */
+  tokensRecall(playerId) {
+    const agora = nowSeconds();
+    return (this.recallTokens.get(String(playerId)) || []).filter((t) => agora - t.at < 13 * 86400);
+  }
+
+  // ===== avaliação de risco =====
+
+  /**
+   * Forte (bloqueia sempre): device recall, hardwareId/deviceId de ban, modelo banido.
+   * Fraco: IP/rede de ban — só loga, e bloqueia CRIAÇÃO de conta se o ban é recente.
+   */
+  avaliarRisco(fp, { criandoConta = false } = {}) {
+    const motivos = [];
+    let bloquear = false;
+    let matchForte = false;
+    let banRelacionado = null;
+
+    if (fp.recallBanido) {
+      bloquear = matchForte = true;
+      motivos.push("device_recall");
     }
-    return this.checkModelBanned(fp);
+
+    const fortes = [
+      ...this._bansAtivos(this._idx.hardwareId, fp.hardwareId),
+      ...this._bansAtivos(this._idx.deviceId, fp.deviceId),
+    ];
+    if (fortes.length) {
+      bloquear = matchForte = true;
+      banRelacionado = fortes[0];
+      motivos.push("hardware_ou_device_banido");
+    }
+
+    const agora = nowSeconds();
+    const recente = (b) => agora - Math.max(b.createdAt || 0, b.ultimaEvasaoAt || 0) <= this.ipJanela;
+    const ipNorm = BanStore.normIp(fp.ip);
+    const porIp = this._bansAtivos(this._idx.ip, ipNorm);
+
+    if (porIp.length) {
+      motivos.push("ip_de_banido");
+      const r = porIp.find(recente);
+      if (criandoConta && this.ipBloqueiaCriacao && r) {
+        bloquear = true;
+        banRelacionado ??= r;
+      }
+    } else if (this._bansAtivos(this._idx.rede, BanStore.prefixoRede(ipNorm)).length) {
+      motivos.push("rede_de_banido");
+    }
+
+    const porModelo = this.checkModelBanned(fp);
+    if (porModelo) {
+      bloquear = matchForte = true;
+      banRelacionado ??= porModelo;
+      motivos.push("modelo_banido");
+    }
+
+    return { bloquear, matchForte, banRelacionado, motivos, suspeito: motivos.length > 0 };
   }
 
-  // Ban por modelo do aparelho (ex.: "INFINIX Infinix X6725").
+  /** Compatibilidade com código antigo (admin-routes etc.). */
+  checkBanned(fp) {
+    const r = this.avaliarRisco(fp);
+    return r.bloquear ? r.banRelacionado || { reason: "Dispositivo banido" } : null;
+  }
+
+  
   checkModelBanned(fp) {
     const key = BanStore.normModel(fp?.model);
     if (!key) return null;
@@ -457,7 +617,6 @@ class BanStore {
       .sort((a, b) => b.createdAt - a.createdAt);
   }
 
-  // Modelos já vistos nos fingerprints, agregados. query casa com "modelo" ou "plataforma modelo".
   listModels(query = "") {
     const q = BanStore.normModel(query);
     const agg = new Map();
@@ -496,7 +655,6 @@ class BanStore {
       .sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0));
   }
 
-  // Contas que já usaram um modelo. exact=true compara o modelo normalizado inteiro.
   findPlayersByModel(model, { exact = true, platform = null } = {}) {
     const q = BanStore.normModel(model);
     const plat = platform ? BanStore.normModel(platform) : null;
@@ -512,28 +670,33 @@ class BanStore {
     }
     return out;
   }
+  
+  banPlayer(playerId, reason, admin = "console", { origemBanId = null, extra = null } = {}) {
+    const existente = this.isPlayerBanned(playerId);
+    if (existente) {
+      if (extra) this.adicionarSinais(existente.banId, extra);
+      return existente;
+    }
 
-  // Bane um player: coleta TODOS os dispositivos/ips já vistos dele
-  // e agrega no registro de ban (por isso o histórico de fingerprints importa).
-  banPlayer(playerId, reason, admin = "console") {
-    const key = String(playerId);
-    const fp = this.fingerprints.get(key);
-
+    const fp = this.fingerprints.get(String(playerId));
     const deviceIds = new Set();
     const hardwareIds = new Set();
     const ips = new Set();
 
-    if (fp) {
-      for (const d of fp.devices) {
-        if (d.deviceId) deviceIds.add(d.deviceId);
-        if (d.hardwareId) hardwareIds.add(d.hardwareId);
-        if (d.ip) ips.add(d.ip);
-      }
+    for (const d of fp?.devices || []) {
+      if (d.deviceId) deviceIds.add(d.deviceId);
+      if (d.hardwareId) hardwareIds.add(d.hardwareId);
+      if (d.ip) ips.add(BanStore.normIp(d.ip));
+    }
+    if (extra) {
+      if (extra.deviceId) deviceIds.add(extra.deviceId);
+      if (extra.hardwareId) hardwareIds.add(extra.hardwareId);
+      if (extra.ip) ips.add(BanStore.normIp(extra.ip));
     }
 
-    const banId = `ban_${playerId}_${nowSeconds()}`;
+    const now = nowSeconds();
     const record = {
-      banId,
+      banId: `ban_${playerId}_${now}_${crypto.randomBytes(3).toString("hex")}`,
       playerId,
       reason: reason || "Sem motivo especificado",
       admin,
@@ -541,42 +704,106 @@ class BanStore {
       deviceIds: [...deviceIds],
       hardwareIds: [...hardwareIds],
       ips: [...ips],
-      createdAt: nowSeconds(),
+      origemBanId,
+      createdAt: now,
+      ultimaEvasaoAt: null,
     };
 
-    this.bans.set(banId, record);
+    this.bans.set(record.banId, record);
+    this._indexar(record);
     this._save(this.bansFile, this.bans);
+
+    this.logger?.warn?.(
+      `[BanStore] player ${playerId} banido por ${admin}` +
+        (origemBanId ? ` (evasão de ${origemBanId})` : "") + `: ${record.reason}`,
+    );
+
+    try { this.aoBanir?.(record); } catch (e) { this.logger?.error?.("[BanStore] aoBanir:", e); }
     return record;
   }
 
-  // Desbane por playerId (desativa todos os bans ativos daquele player).
-  unbanPlayer(playerId) {
-    let count = 0;
+  /** Ban "aprende" os IDs novos que o cheater gerou ao tentar voltar. */
+  adicionarSinais(banId, fp) {
+    const ban = this.bans.get(banId);
+    if (!ban || !ban.active || !fp) return;
+
+    let mudou = false;
+    const add = (arr, v) => {
+      if (v && !arr.includes(v)) { arr.push(v); mudou = true; }
+    };
+    add(ban.deviceIds, fp.deviceId);
+    add(ban.hardwareIds, fp.hardwareId);
+    add(ban.ips, BanStore.normIp(fp.ip));
+
+    ban.ultimaEvasaoAt = nowSeconds();
+    if (mudou) this._indexar(ban);
+    this._saveSoon(this.bansFile, this.bans);
+  }
+
+  /** Desbane o player. Com cascata, desbane também as contas banidas por evasão dele. */
+  unbanPlayer(playerId, { cascata = true } = {}) {
+    const agora = nowSeconds();
+    const desativados = [];
+
     for (const ban of this.bans.values()) {
       if (ban.active && String(ban.playerId) === String(playerId)) {
         ban.active = false;
-        ban.unbannedAt = nowSeconds();
-        count++;
+        ban.unbannedAt = agora;
+        desativados.push(ban);
       }
     }
-    if (count > 0) this._save(this.bansFile, this.bans);
-    return count;
+
+    if (cascata) {
+      let mudou = desativados.length > 0;
+      while (mudou) {
+        mudou = false;
+        const ids = new Set(desativados.map((b) => b.banId));
+        for (const ban of this.bans.values()) {
+          if (ban.active && ban.origemBanId && ids.has(ban.origemBanId)) {
+            ban.active = false;
+            ban.unbannedAt = agora;
+            desativados.push(ban);
+            mudou = true;
+          }
+        }
+      }
+    }
+
+    if (desativados.length > 0) {
+      this._reindexar();
+      this._save(this.bansFile, this.bans);
+      const players = new Set(desativados.map((b) => String(b.playerId)));
+      for (const pid of players) {
+        try { this.aoDesbanir?.(Number(pid)); } catch (e) { this.logger?.error?.("[BanStore] aoDesbanir:", e); }
+      }
+    }
+    return desativados.length;
   }
 
   isPlayerBanned(playerId) {
-    for (const ban of this.bans.values()) {
-      if (ban.active && String(ban.playerId) === String(playerId)) return ban;
-    }
-    return null;
+    return this._bansAtivos(this._idx.player, String(playerId))[0] || null;
   }
 
   listBans(activeOnly = true) {
-    const out = [];
+    return [...this.bans.values()].filter((b) => !activeOnly || b.active);
+  }
+
+  /** Para o game server: quem foi banido/desbanido desde `since` (0 = lista completa). */
+  mudancasDesde(since) {
+    const banidos = new Set();
+    const desbanidos = new Set();
+
     for (const ban of this.bans.values()) {
-      if (activeOnly && !ban.active) continue;
-      out.push(ban);
+      const pid = Number(ban.playerId);
+      if (!Number.isInteger(pid) || pid <= 0) continue;
+      if (ban.active && (since === 0 || ban.createdAt >= since)) banidos.add(pid);
+      else if (!ban.active && since > 0 && (ban.unbannedAt || 0) >= since) desbanidos.add(pid);
     }
-    return out;
+
+    for (const pid of [...desbanidos]) {
+      if (banidos.has(pid) || this.isPlayerBanned(pid)) desbanidos.delete(pid);
+    }
+    return { banidos: [...banidos], desbanidos: [...desbanidos] };
   }
 }
 
@@ -1551,6 +1778,29 @@ _migrateSkinsTable() {
       .run(now);
     return result.changes;
   }
+
+  revogarSessoes(playerId) {
+    return this.db.prepare("DELETE FROM sessions WHERE playerId = ?").run(playerId).changes;
+  }
+
+  emailExiste(email) {
+    return !!this.db.prepare("SELECT 1 FROM accounts WHERE email = ?").get(email);
+  }
+
+  contaGuestPorDevice(deviceId) {
+    return this.db
+      .prepare("SELECT playerId FROM accounts WHERE guestDeviceId = ?")
+      .get(deviceId)?.playerId ?? null;
+  }
+
+  /** Confere senha SEM criar sessão. Usado só para descobrir a conta de quem tenta evadir. */
+  async verificarCredenciais(email, password) {
+    const a = this.db
+      .prepare("SELECT playerId, passwordHash FROM accounts WHERE email = ?")
+      .get(email);
+    if (!a) return null;
+    return (await bcrypt.compare(password, a.passwordHash)) ? a.playerId : null;
+  }
 }
 // ===== LOAD CONFIG =====
 let config;
@@ -1570,19 +1820,213 @@ const app = express();
 const shopStore = new ShopStore(authStore.db, config, logger);
 const googleShop = new GoogleShopStore(authStore.db, config, logger);
 const skinCatalog = new SkinCatalogStore(config, logger);
+const { IntegrityService } = require("./integrity");
+const integrity = new IntegrityService(config, logger);
+
+class LimiteCriacaoConta {
+  constructor(config) {
+    const c = config.accountCreation || {};
+    this.janela = (c.windowHours ?? 24) * 3600;
+    this.maxPorIp = c.maxPerIp ?? 8;
+    this.maxPorDispositivo = c.maxPerDevice ?? 2;
+    this.hist = new Map(); // chave -> [timestamps]
+    setInterval(() => this._limpar(), 10 * 60 * 1000).unref();
+  }
+
+  _chaves(fp) {
+    const k = [];
+    const ip = BanStore.normIp(fp.ip);
+    if (ip) k.push([`ip:${ip}`, this.maxPorIp]);
+    if (fp.hardwareId) k.push([`hw:${fp.hardwareId}`, this.maxPorDispositivo]);
+    if (fp.deviceId) k.push([`dev:${fp.deviceId}`, this.maxPorDispositivo]);
+    return k;
+  }
+
+  _recentes(chave, agora) {
+    const l = (this.hist.get(chave) || []).filter((t) => t > agora - this.janela);
+    this.hist.set(chave, l);
+    return l;
+  }
+
+  verificar(fp) {
+    const agora = nowSeconds();
+    for (const [chave, max] of this._chaves(fp)) {
+      if (this._recentes(chave, agora).length >= max) return chave.split(":")[0];
+    }
+    return null;
+  }
+
+  registrar(fp) {
+    const agora = nowSeconds();
+    for (const [chave] of this._chaves(fp)) this._recentes(chave, agora).push(agora);
+  }
+
+  _limpar() {
+    const agora = nowSeconds();
+    for (const chave of [...this.hist.keys()]) {
+      if (this._recentes(chave, agora).length === 0) this.hist.delete(chave);
+    }
+  }
+}
+const limiteCriacao = new LimiteCriacaoConta(config);
+
+// Ban => derruba a sessão na hora e marca o(s) aparelho(s) no Google.
+banStore.aoBanir = (ban) => {
+  const n = authStore.revogarSessoes(ban.playerId);
+  if (n > 0) logger.info(`[Ban] ${n} sessão(ões) do player ${ban.playerId} revogada(s).`);
+  for (const t of banStore.tokensRecall(ban.playerId)) {
+    integrity.escreverRecall(t.token, { bitFirst: true })
+      .then((ok) => ok && logger.info(`[Ban] device recall gravado (player ${ban.playerId}).`));
+  }
+};
+
+banStore.aoDesbanir = (playerId) => {
+  for (const t of banStore.tokensRecall(playerId)) {
+    integrity.escreverRecall(t.token, { bitFirst: false });
+  }
+};
 
 const { PopupStore, registrarRotasPopups } = require("./popups");
 
 const popupStore = new PopupStore({ config, logger });
 
-function extractFingerprint(req) {
+function extractFingerprint(req, integridade = null) {
+  const b = req.body || {};
+  const str = (v, max) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+
   return {
-    deviceId: req.body.deviceId || null,
-    hardwareId: req.body.hardwareId || null,
-    platform: req.body.platform || null,       // "android" | "windows"
-    model: req.body.model || null,             // modelo do aparelho/PC
-    ip: req.ip || null,
+    deviceId: str(b.deviceId, 128),
+    hardwareId: str(b.hardwareId, 128),
+    platform: str(b.platform, 16)?.toLowerCase() || null,
+    model: str(b.model, 120),
+    ip: BanStore.normIp(req.ip || req.socket?.remoteAddress),
+    integrityOk: integridade?.ok === true,
+    recallBanido: integridade?.recallBanido === true,
+    // só guarda token que o Google decodificou (serve para gravar recall depois)
+    integrityToken: integridade?.avaliado ? integridade.token : null,
   };
+}
+
+/** Integridade + risco + limite de criação. Retorna ctx, ou null se já respondeu. */
+async function prepararAuth(req, res, { criandoConta, rotulo }) {
+  const integridade = await integrity.verificarRequisicao(req.body);
+  const fp = extractFingerprint(req, integridade);
+
+  if (!integridade.ok && integrity.modo !== "off") {
+    const exigir = integrity.exige(fp.platform);
+    // Google fora do ar não impede login de conta existente; criação de conta sim.
+    const toleravel = integridade.erroInfra && !criandoConta;
+    const recusar = exigir && !toleravel;
+
+    logger.warn(
+      `[Integrity] ${rotulo}: ${integridade.motivos.join(",")} ip=${fp.ip} plat=${fp.platform}` +
+        (recusar ? " -> RECUSADO" : " -> apenas log"),
+    );
+
+    if (recusar) {
+      res.status(403).json({
+        ok: false,
+        error: "Não foi possível verificar este dispositivo. Instale o jogo pela Play Store.",
+        code: "INTEGRITY_FAILED",
+        reasons: integridade.motivos,
+      });
+      return null;
+    }
+  }
+
+  const risco = banStore.avaliarRisco(fp, { criandoConta });
+
+  if (!risco.bloquear && criandoConta) {
+    const limite = limiteCriacao.verificar(fp);
+    if (limite) {
+      logger.warn(`[Conta] criação bloqueada por limite (${limite}) ip=${fp.ip}`);
+      res.status(429).json({
+        ok: false,
+        error: "Muitas contas criadas recentemente nesta rede/dispositivo. Tente mais tarde.",
+        code: "ACCOUNT_CREATION_LIMIT",
+      });
+      return null;
+    }
+  }
+
+  return { fp, integridade, risco };
+}
+
+function marcarDispositivo(ctx) {
+  const token = ctx.fp.integrityToken;
+  if (!integrity.recallHabilitado || !token || ctx.fp.recallBanido) return;
+  integrity.escreverRecall(token, { bitFirst: true })
+    .then((ok) => ok && logger.info(`[Ban] device recall gravado (ip=${ctx.fp.ip}).`));
+}
+
+/** Bloqueia, propaga o ban para a conta usada na evasão e aprende os IDs novos. */
+function responderBanido(res, ctx, playerIdAlvo, rotulo) {
+  const { fp, risco } = ctx;
+  const ban = risco.banRelacionado;
+  const banDeModelo = ban?.type === "model";
+
+  if (risco.matchForte && !banDeModelo) {
+    if (playerIdAlvo && banStore.propagarEvasao && !banStore.isPlayerBanned(playerIdAlvo)) {
+      banStore.banPlayer(
+        playerIdAlvo,
+        `Evasão de banimento (${ban?.reason || "dispositivo banido"})`,
+        "auto-evasao",
+        { origemBanId: ban?.banId || null, extra: fp },
+      );
+    } else if (ban?.banId) {
+      banStore.adicionarSinais(ban.banId, fp);
+    }
+    marcarDispositivo(ctx);
+  }
+
+  logger.warn(
+    `[Ban] ${rotulo} BLOQUEADO: ${risco.motivos.join(",")} ip=${fp.ip} hw=${fp.hardwareId} dev=${fp.deviceId}`,
+  );
+
+  if (!risco.matchForte) {
+    // Só IP: pode ser inocente atrás do mesmo CGNAT. Mensagem neutra.
+    return res.status(403).json({
+      ok: false,
+      error: "Criação de conta temporariamente indisponível nesta rede.",
+      code: "NETWORK_RESTRICTED",
+    });
+  }
+
+  return res.status(403).json({
+    ok: false,
+    error: "Conta ou dispositivo banido",
+    reason: ban?.reason || "Dispositivo banido",
+    banned: true,
+  });
+}
+
+/** Pós-login: registra o aparelho e barra conta banida (revogando a sessão recém-criada). */
+function finalizarAuth(res, ctx, result, rotulo) {
+  const { fp, risco } = ctx;
+
+  banStore.recordFingerprint(result.playerId, fp);
+  if (result.isNewAccount) limiteCriacao.registrar(fp);
+
+  const playerBan = banStore.isPlayerBanned(result.playerId);
+  if (playerBan) {
+    authStore.revogarSessoes(result.playerId);
+    banStore.adicionarSinais(playerBan.banId, fp);
+    marcarDispositivo(ctx);
+    logger.warn(`[Ban] ${rotulo}: conta ${result.playerId} banida tentou logar (ip=${fp.ip}).`);
+    return res.status(403).json({
+      ok: false,
+      error: "Conta banida",
+      reason: playerBan.reason,
+      banned: true,
+    });
+  }
+
+  if (risco.suspeito) {
+    logger.warn(`[Ban] login permitido mas SUSPEITO: player ${result.playerId} (${risco.motivos.join(",")})`);
+  }
+
+  logger.info(`${rotulo} -> playerId ${result.playerId} (new: ${!!result.isNewAccount})`);
+  return res.json({ ok: true, ...result });
 }
 
 // ===== MIDDLEWARE =====
@@ -1600,29 +2044,31 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
-app.set("trust proxy", true);
+app.set("trust proxy", config.trustProxy ?? false);
 
 const serverAuth = serverAuthMiddleware(config, logger);
 const jwtAuth = (req, res, next) => {
   const authHeader = req.headers["authorization"];
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res
-      .status(401)
-      .json({ ok: false, error: "Missing or invalid token" });
+    return res.status(401).json({ ok: false, error: "Missing or invalid token" });
   }
 
   const token = authHeader.substring(7);
   const deviceId = req.headers["x-device-id"];
-
   if (!deviceId) {
     return res.status(401).json({ ok: false, error: "Missing device ID" });
   }
 
   const validation = authStore.validateSession(token, deviceId);
   if (!validation.valid) {
-    return res
-      .status(401)
-      .json({ ok: false, error: "Invalid session", reason: validation.reason });
+    return res.status(401).json({ ok: false, error: "Invalid session", reason: validation.reason });
+  }
+
+  // Rede de segurança: mesmo que alguma sessão escape da revogação, ban vence.
+  const ban = banStore.isPlayerBanned(validation.playerId);
+  if (ban) {
+    authStore.revogarSessoes(validation.playerId);
+    return res.status(403).json({ ok: false, error: "Conta banida", reason: ban.reason, banned: true });
   }
 
   req.playerId = validation.playerId;
@@ -1830,98 +2276,88 @@ app.get("/servers", rateLimiter.middleware(), (req, res) => {
 
 
 // Join token issuance
-app.post("/join", rateLimiter.middleware(), (req, res) => {
+app.post("/join", rateLimiter.middleware(), jwtAuth, (req, res) => {
   const { serverId, playerName, clientBuildVersion } = req.body;
 
-  const validation = validateRequired(
-    ["serverId", "playerName", "clientBuildVersion"],
-    req.body,
-  );
-  if (validation) {
-    return res.status(400).json({ ok: false, error: validation });
-  }
+  const validation = validateRequired(["serverId", "playerName", "clientBuildVersion"], req.body);
+  if (validation) return res.status(400).json({ ok: false, error: validation });
 
   if (!config.allowedClientBuilds.includes(clientBuildVersion)) {
-    logger.warn(
-      `Join rejected: incompatible client build ${clientBuildVersion}`,
-    );
-    return res.status(400).json({
-      ok: false,
-      error: "Incompatible client version",
-      latestBuild: config.latestClientBuild,
-    });
+    logger.warn(`Join rejected: incompatible client build ${clientBuildVersion}`);
+    return res.status(400).json({ ok: false, error: "Incompatible client version", latestBuild: config.latestClientBuild });
   }
 
   const server = store.getServer(serverId);
   if (!server) {
-    return res.status(409).json({
-      ok: false,
-      error: "Server not available",
-      details: "Server not found or offline",
-    });
+    return res.status(409).json({ ok: false, error: "Server not available", details: "Server not found or offline" });
   }
 
   const now = nowSeconds();
-  const timeSinceHeartbeat = now - server.lastHeartbeatAt;
-  if (timeSinceHeartbeat > config.heartbeatTTLSeconds) {
-    return res.status(409).json({
-      ok: false,
-      error: "Server not available",
-      details: "Server is offline",
-    });
+  if (now - server.lastHeartbeatAt > config.heartbeatTTLSeconds) {
+    return res.status(409).json({ ok: false, error: "Server not available", details: "Server is offline" });
   }
-
   if (server.status === "Cheio") {
-    return res.status(409).json({
-      ok: false,
-      error: "Server full",
-      details: "Server has reached maximum capacity",
-    });
+    return res.status(409).json({ ok: false, error: "Server full", details: "Server has reached maximum capacity" });
   }
-
   if (server.status === "Offline" || server.status === "Manutenção") {
-    return res.status(409).json({
-      ok: false,
-      error: "Server not available",
-      details: `Server status: ${server.status}`,
-    });
+    return res.status(409).json({ ok: false, error: "Server not available", details: `Server status: ${server.status}` });
   }
 
-  // Sessão opcional: liga o join à conta para o relatório ("jogaram partida").
-  // Sem os headers o join continua funcionando como antes.
-  let accountId = null;
-  const authHeader = req.headers["authorization"];
-  const deviceIdHdr = req.headers["x-device-id"];
-  if (authHeader && authHeader.startsWith("Bearer ") && deviceIdHdr) {
-    const v = authStore.validateSession(authHeader.substring(7), deviceIdHdr);
-    if (v.valid) accountId = v.playerId;
-  }
-
+  const accountId = req.playerId; // garantido pelo jwtAuth (que também já barrou ban)
   const playerId = generateGuid();
   const joinToken = generateJoinToken();
   const expiresAt = now + config.tokenTTLSeconds;
 
-  store.createJoinToken({
-    joinToken,
-    serverId,
-    playerId,
-    accountId,
-    playerName,
-    clientBuildVersion,
-    expiresAt,
-  });
-  logger.info(
-    `Join token issued: ${playerName}${accountId ? ` (${accountId})` : ""} -> ${server.name} (expires in ${config.tokenTTLSeconds}s)`,
-  );
+  store.createJoinToken({ joinToken, serverId, playerId, accountId, playerName, clientBuildVersion, expiresAt });
+  logger.info(`Join token issued: ${playerName} (${accountId}) -> ${server.name} (expires in ${config.tokenTTLSeconds}s)`);
+
+  res.json({ ok: true, ip: server.ip, port: server.port, playerId, joinToken, expiresAt });
+});
+
+app.post("/join/validate", serverAuth, (req, res) => {
+  const { serverId, playerId, joinToken } = req.body;
+
+  const validation = validateRequired(["serverId", "playerId", "joinToken"], req.body);
+  if (validation) {
+    logger.warn("[VALIDATE] Missing required fields");
+    return res.status(400).json({ ok: false, error: validation });
+  }
+
+  const result = store.validateToken(serverId, playerId, joinToken);
+  if (!result.valid) {
+    logger.warn(`[VALIDATE] falhou: ${result.reason} (serverId=${serverId}, playerId=${playerId})`);
+    return res.json({ ok: true, valid: false, reason: result.reason, accountId: 0 });
+  }
+
+  if (!result.accountId) {
+    logger.warn(`[VALIDATE] ${result.playerName} sem conta vinculada — recusado.`);
+    return res.json({ ok: true, valid: false, reason: "no_account", accountId: 0 });
+  }
+
+  // O token pode ter sido emitido segundos antes do ban.
+  if (banStore.isPlayerBanned(result.accountId)) {
+    logger.warn(`[VALIDATE] conta ${result.accountId} banida tentou entrar em ${serverId}.`);
+    return res.json({ ok: true, valid: false, reason: "banned", accountId: 0 });
+  }
+
+  authStore.registrarPartidaDiaria?.(result.accountId);
+  logger.info(`[VALIDATE] ✓ ${result.playerName} (${result.accountId}) joined server ${serverId}`);
 
   res.json({
     ok: true,
-    ip: server.ip,
-    port: server.port,
+    valid: true,
     playerId,
-    joinToken,
-    expiresAt,
+    accountId: result.accountId,
+    clientBuildVersion: result.clientBuildVersion,
   });
+});
+
+// Game server consulta periodicamente para expulsar quem foi banido com a partida rolando.
+app.get("/servers/bans/sync", serverAuth, (req, res) => {
+  const since = Math.max(0, parseInt(req.query.since, 10) || 0);
+  const now = nowSeconds();
+  const { banidos, desbanidos } = banStore.mudancasDesde(since);
+  res.json({ ok: true, now, banidos, desbanidos });
 });
 
 // Join token validation
@@ -1988,195 +2424,104 @@ app.get("/stats", (req, res) => {
 
 //#region Rotas Contas
 
+app.post("/auth/integrity/nonce", rateLimiter.middleware(), (req, res) => {
+  res.json({ ok: true, nonce: integrity.criarNonce() });
+});
+
 app.post("/auth/email", rateLimiter.middleware(), async (req, res) => {
   const { email, password, deviceId, clientBuildVersion } = req.body;
 
-  const validation = validateRequired(
-    ["email", "password", "deviceId", "clientBuildVersion"],
-    req.body,
-  );
-  if (validation) {
-    return res.status(400).json({ ok: false, error: validation });
-  }
+  const validation = validateRequired(["email", "password", "deviceId", "clientBuildVersion"], req.body);
+  if (validation) return res.status(400).json({ ok: false, error: validation });
 
   if (!config.allowedClientBuilds.includes(clientBuildVersion)) {
     logger.warn(`Email auth rejected: incompatible client build ${clientBuildVersion}`);
-    return res.status(400).json({
-      ok: false,
-      error: "Incompatible client version",
-      latestBuild: config.latestClientBuild,
-    });
+    return res.status(400).json({ ok: false, error: "Incompatible client version", latestBuild: config.latestClientBuild });
   }
-
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ ok: false, error: "Invalid email format" });
   }
-
-  if (password.length < 6) {
+  if (typeof password !== "string" || password.length < 6) {
     return res.status(400).json({ ok: false, error: "Password must be at least 6 characters" });
   }
 
-  // 🔒 checagem de ban ANTES de logar/registrar (bloqueia device/hardware/ip banido)
-  const fp = extractFingerprint(req);
-  const ban = banStore.checkBanned(fp);
-  if (ban) {
-    logger.warn(`Email auth BLOQUEADO (banido): ${email} | motivo=${ban.reason}`);
-    return res.status(403).json({
-      ok: false,
-      error: "Conta ou dispositivo banido",
-      reason: ban.reason,
-      banned: true,
-    });
-  }
-
   try {
+    const contaExiste = authStore.emailExiste(email);
+    const ctx = await prepararAuth(req, res, { criandoConta: !contaExiste, rotulo: `email ${email}` });
+    if (!ctx) return;
+
+    if (ctx.risco.bloquear) {
+      // descobre a conta SEM criar sessão, só para propagar o ban a ela
+      const alvo = contaExiste ? await authStore.verificarCredenciais(email, password) : null;
+      return responderBanido(res, ctx, alvo, `email ${email}`);
+    }
+
     const result = await authStore.loginOrRegisterEmail(email, password, deviceId);
-
-    // registra o fingerprint deste player (histórico de dispositivos)
-    banStore.recordFingerprint(result.playerId, fp);
-
-    // se a conta em si estiver banida por playerId, bloqueia também
-    const playerBan = banStore.isPlayerBanned(result.playerId);
-    if (playerBan) {
-      return res.status(403).json({
-        ok: false,
-        error: "Conta banida",
-        reason: playerBan.reason,
-        banned: true,
-      });
-    }
-
-    logger.info(`Email auth: ${email} -> playerId ${result.playerId} (new: ${result.isNewAccount})`);
-    res.json({ ok: true, ...result });
+    return finalizarAuth(res, ctx, result, `Email auth: ${email}`);
   } catch (error) {
-    if (error.status) {
-      return res.status(error.status).json({ ok: false, error: error.message });
-    }
+    if (error.status) return res.status(error.status).json({ ok: false, error: error.message });
     logger.error("Email auth error:", error);
     res.status(500).json({ ok: false, error: "Internal server error" });
   }
 });
 
-app.post("/auth/guest", rateLimiter.middleware(), (req, res) => {
+app.post("/auth/guest", rateLimiter.middleware(), async (req, res) => {
   const { deviceId, clientBuildVersion } = req.body;
 
   const validation = validateRequired(["deviceId", "clientBuildVersion"], req.body);
-  if (validation) {
-    return res.status(400).json({ ok: false, error: validation });
-  }
+  if (validation) return res.status(400).json({ ok: false, error: validation });
 
   if (!config.allowedClientBuilds.includes(clientBuildVersion)) {
     logger.warn(`Guest auth rejected: incompatible client build ${clientBuildVersion}`);
-    return res.status(400).json({
-      ok: false,
-      error: "Incompatible client version",
-      latestBuild: config.latestClientBuild,
-    });
-  }
-
-  // 🔒 checagem de ban por device/hardware/ip
-  const fp = extractFingerprint(req);
-  const ban = banStore.checkBanned(fp);
-  if (ban) {
-    logger.warn(`Guest auth BLOQUEADO (banido): deviceId=${deviceId} | motivo=${ban.reason}`);
-    return res.status(403).json({
-      ok: false,
-      error: "Dispositivo banido",
-      reason: ban.reason,
-      banned: true,
-    });
+    return res.status(400).json({ ok: false, error: "Incompatible client version", latestBuild: config.latestClientBuild });
   }
 
   try {
+    const existente = authStore.contaGuestPorDevice(deviceId);
+    const ctx = await prepararAuth(req, res, { criandoConta: !existente, rotulo: `guest ${deviceId}` });
+    if (!ctx) return;
+
+    if (ctx.risco.bloquear) return responderBanido(res, ctx, existente, `guest ${deviceId}`);
+
     let result;
-    try {
+    if (existente) {
       result = authStore.loginGuest(deviceId);
       result.isNewAccount = false;
-    } catch (error) {
-      if (error.status === 404) {
-        result = authStore.registerGuest(deviceId);
-        result.isNewAccount = true;
-      } else {
-        throw error;
-      }
+    } else {
+      result = authStore.registerGuest(deviceId);
+      result.isNewAccount = true;
     }
-
-    banStore.recordFingerprint(result.playerId, fp);
-
-    const playerBan = banStore.isPlayerBanned(result.playerId);
-    if (playerBan) {
-      return res.status(403).json({
-        ok: false,
-        error: "Conta banida",
-        reason: playerBan.reason,
-        banned: true,
-      });
-    }
-
-    logger.info(`Guest auth: deviceId ${deviceId} -> playerId ${result.playerId} (new: ${result.isNewAccount})`);
-    res.json({ ok: true, ...result });
+    return finalizarAuth(res, ctx, result, `Guest auth: deviceId ${deviceId}`);
   } catch (error) {
-    if (error.status && error.status !== 404) {
-      return res.status(error.status).json({ ok: false, error: error.message });
-    }
+    if (error.status) return res.status(error.status).json({ ok: false, error: error.message });
     logger.error("Guest auth error:", error);
     res.status(500).json({ ok: false, error: "Internal server error" });
   }
 });
 
-app.post("/auth/login/guest", rateLimiter.middleware(), (req, res) => {
+app.post("/auth/login/guest", rateLimiter.middleware(), async (req, res) => {
   const { deviceId, clientBuildVersion } = req.body;
 
   const validation = validateRequired(["deviceId", "clientBuildVersion"], req.body);
-  if (validation) {
-    return res.status(400).json({ ok: false, error: validation });
-  }
+  if (validation) return res.status(400).json({ ok: false, error: validation });
 
   if (!config.allowedClientBuilds.includes(clientBuildVersion)) {
     logger.warn(`Guest login rejected: incompatible client build ${clientBuildVersion}`);
-    return res.status(400).json({
-      ok: false,
-      error: "Incompatible client version",
-      latestBuild: config.latestClientBuild,
-    });
-  }
-
-  // 🔒 checagem de ban por device/hardware/ip ANTES de logar
-  const fp = extractFingerprint(req);
-  const ban = banStore.checkBanned(fp);
-  if (ban) {
-    logger.warn(`Guest login BLOQUEADO (banido): deviceId=${deviceId} | motivo=${ban.reason}`);
-    return res.status(403).json({
-      ok: false,
-      error: "Dispositivo banido",
-      reason: ban.reason,
-      banned: true,
-    });
+    return res.status(400).json({ ok: false, error: "Incompatible client version", latestBuild: config.latestClientBuild });
   }
 
   try {
-    const result = authStore.loginGuest(deviceId);
+    const existente = authStore.contaGuestPorDevice(deviceId);
+    const ctx = await prepararAuth(req, res, { criandoConta: false, rotulo: `guest login ${deviceId}` });
+    if (!ctx) return;
 
-    // registra o fingerprint deste player
-    banStore.recordFingerprint(result.playerId, fp);
+    if (ctx.risco.bloquear) return responderBanido(res, ctx, existente, `guest login ${deviceId}`);
 
-    // conta banida por playerId
-    const playerBan = banStore.isPlayerBanned(result.playerId);
-    if (playerBan) {
-      return res.status(403).json({
-        ok: false,
-        error: "Conta banida",
-        reason: playerBan.reason,
-        banned: true,
-      });
-    }
-
-    logger.info(`Guest login: deviceId ${deviceId} -> playerId ${result.playerId}`);
-    res.json({ ok: true, ...result });
+    const result = authStore.loginGuest(deviceId); // 404 se não existir
+    result.isNewAccount = false;
+    return finalizarAuth(res, ctx, result, `Guest login: deviceId ${deviceId}`);
   } catch (error) {
-    if (error.status) {
-      return res.status(error.status).json({ ok: false, error: error.message });
-    }
+    if (error.status) return res.status(error.status).json({ ok: false, error: error.message });
     logger.error("Guest login error:", error);
     res.status(500).json({ ok: false, error: "Internal server error" });
   }
@@ -2254,14 +2599,18 @@ app.post("/auth/validate-session", (req, res) => {
   const { token, deviceId } = req.body;
 
   const validation = validateRequired(["token", "deviceId"], req.body);
-  if (validation) {
-    return res.status(400).json({ ok: false, error: validation });
-  }
+  if (validation) return res.status(400).json({ ok: false, error: validation });
 
   const result = authStore.validateSession(token, deviceId);
 
-  // reabriu o jogo com sessão salva = login do dia (o chat NÃO passa por aqui)
-  if (result.valid) authStore.registrarLoginDiario?.(result.playerId);
+  if (result.valid) {
+    const ban = banStore.isPlayerBanned(result.playerId);
+    if (ban) {
+      authStore.revogarSessoes(result.playerId);
+      return res.json({ ok: true, valid: false, reason: "banned", banned: true });
+    }
+    authStore.registrarLoginDiario?.(result.playerId);
+  }
 
   res.json({ ok: true, ...result });
 });
