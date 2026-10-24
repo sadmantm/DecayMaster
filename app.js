@@ -1420,20 +1420,26 @@ _migrateSkinsTable() {
 
   getOwnedSkinIds(playerId) {
     return this.db
-      .prepare(`SELECT skinId FROM skins WHERE playerId = ?`)
-      .all(playerId)
+      .prepare(
+        `SELECT skinId FROM skins
+         WHERE playerId = ? AND (expiresAt = 0 OR expiresAt > ?)`,
+      )
+      .all(playerId, nowSeconds())
       .map((r) => r.skinId);
   }
-
+  
   equipSkin(playerId, entry) {
     if (!entry.slotKey) throw { status: 400, message: "Skin sem slot definido" };
-
+  
     const owns = this.db
-      .prepare(`SELECT 1 FROM skins WHERE playerId = ? AND skinId = ?`)
-      .get(playerId, entry.skinId);
-
+      .prepare(
+        `SELECT 1 FROM skins
+         WHERE playerId = ? AND skinId = ? AND (expiresAt = 0 OR expiresAt > ?)`,
+      )
+      .get(playerId, entry.skinId, nowSeconds());
+  
     if (!owns) throw { status: 403, message: "Você não possui esta skin" };
-
+  
     this.db
       .prepare(
         `INSERT INTO equipped_skins (playerId, slotKey, skinId, equippedAt)
@@ -1441,21 +1447,28 @@ _migrateSkinsTable() {
          ON CONFLICT(playerId, slotKey) DO UPDATE SET skinId = excluded.skinId, equippedAt = excluded.equippedAt`,
       )
       .run(playerId, entry.slotKey, entry.skinId, nowSeconds());
-
+  
     return { slotKey: entry.slotKey, skinId: entry.skinId };
   }
-
+  
   unequipSlot(playerId, slotKey) {
+    // NOCASE: o game server trata slotKey sem diferenciar maiúsculas.
     const r = this.db
-      .prepare(`DELETE FROM equipped_skins WHERE playerId = ? AND slotKey = ?`)
+      .prepare(`DELETE FROM equipped_skins WHERE playerId = ? AND slotKey = ? COLLATE NOCASE`)
       .run(playerId, slotKey);
     return r.changes > 0;
   }
-
+  
   getEquipped(playerId) {
+    // Só devolve o que ainda é possuído: skin expirada não volta a ser aplicada.
     return this.db
-      .prepare(`SELECT slotKey, skinId FROM equipped_skins WHERE playerId = ?`)
-      .all(playerId);
+      .prepare(
+        `SELECT e.slotKey, e.skinId
+         FROM equipped_skins e
+         JOIN skins s ON s.playerId = e.playerId AND s.skinId = e.skinId
+         WHERE e.playerId = ? AND (s.expiresAt = 0 OR s.expiresAt > ?)`,
+      )
+      .all(playerId, nowSeconds());
   }
   
   // Busca players por nick (parcial, case-insensitive). Limite pra não travar console.
@@ -2938,16 +2951,66 @@ app.post("/shop/unequip", jwtAuth, (req, res) => {
   res.json({ ok: true, slotKey, removed });
 });
 
-// 🔒 serverAuth: quem chama é o GAME SERVER, não o cliente.
 app.get("/players/:playerId/equipped", serverAuth, (req, res) => {
   const playerId = parseInt(req.params.playerId, 10);
-  if (!Number.isInteger(playerId))
+  if (!Number.isInteger(playerId) || playerId <= 0)
     return res.status(400).json({ ok: false, error: "Invalid playerId" });
 
   try {
-    res.json({ ok: true, playerId, equipped: authStore.getEquipped(playerId) });
+    // Posse com o slot vindo do catálogo do master (fonte da verdade).
+    // Skin sem slotKey no skins.json não é equipável, então fica de fora.
+    // Não filtra por `available`: skin fora de venda continua sendo do jogador.
+    const owned = [];
+    for (const skinId of authStore.getOwnedSkinIds(playerId)) {
+      const entry = skinCatalog.get(skinId);
+      if (entry?.slotKey) owned.push({ slotKey: entry.slotKey, skinId });
+    }
+
+    res.json({
+      ok: true,
+      playerId,
+      equipped: authStore.getEquipped(playerId),
+      owned,
+    });
   } catch (error) {
     logger.error("Get equipped error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+app.post("/players/:playerId/equip", serverAuth, (req, res) => {
+  const playerId = parseInt(req.params.playerId, 10);
+  const { slotKey, skinId } = req.body || {};
+
+  if (!Number.isInteger(playerId) || playerId <= 0)
+    return res.status(400).json({ ok: false, error: "Invalid playerId" });
+  if (typeof slotKey !== "string" || !slotKey || slotKey.length > 64)
+    return res.status(400).json({ ok: false, error: "slotKey required (max 64)" });
+  if (!Number.isInteger(skinId) || skinId < 0)
+    return res.status(400).json({ ok: false, error: "skinId must be an integer >= 0" });
+
+  try {
+    // 0 = voltar ao visual padrão.
+    if (skinId === 0) {
+      const removed = authStore.unequipSlot(playerId, slotKey);
+      logger.info(`[Skin] game server desequipou ${slotKey} do player ${playerId}`);
+      return res.json({ ok: true, slotKey, skinId: 0, removed });
+    }
+
+    const entry = skinCatalog.get(skinId);
+    if (!entry)
+      return res.status(404).json({ ok: false, error: "Skin não encontrada", code: "SKIN_NOT_FOUND" });
+
+    // O game server não escolhe o slot: ele tem que bater com o do catálogo.
+    if (!entry.slotKey || entry.slotKey.toLowerCase() !== slotKey.toLowerCase())
+      return res.status(400).json({ ok: false, error: "Skin não pertence a este slot", code: "SLOT_MISMATCH" });
+
+    const result = authStore.equipSkin(playerId, entry); // 403 se não possui/expirou
+    logger.info(`[Skin] game server equipou skin ${skinId} em ${result.slotKey} (player ${playerId})`);
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ ok: false, error: error.message });
+    logger.error("Server equip error:", error);
     res.status(500).json({ ok: false, error: "Internal server error" });
   }
 });

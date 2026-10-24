@@ -223,6 +223,34 @@
             "currency": "DC",
             "available": true,
             "slotKey": "object:BAUGRANDE"
+        },
+        {
+            "skinId": 3022,
+            "price": 80,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "object:BAUGRANDE"
+        },
+        {
+            "skinId": 3023,
+            "price": 60,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "object:BAUGRANDE"
+        },
+        {
+            "skinId": 3024,
+            "price": 80,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "object:BAUGRANDE"
+        },
+        {
+            "skinId": 3025,
+            "price": 240,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "object:BAUGRANDE"
         }
     ]
 }
