@@ -244,21 +244,36 @@ class RateLimiter {
     this.config = config;
     this.logger = logger;
     this.requests = new Map();
+    this.ipCompartilhado = () => false; // ligado ao BanStore depois de criado
   }
 
   // Vários jogadores dividem o mesmo IP (CGNAT): o limite normal vale por
-  // IP+dispositivo, e o IP inteiro só tem um teto bem maior (maxRequestsPerIp).
+  // IP+dispositivo (ou IP+token), e o IP inteiro só tem um teto bem maior
+  // (maxRequestsPerIp). IP compartilhado (VPN/booster com centenas de contas)
+  // não tem teto de IP: só vale o limite por dispositivo/token.
   middleware() {
     return (req, res, next) => {
-      const ip = req.ip || req.connection.remoteAddress;
+      const ip = BanStore.normIp(req.ip || req.socket?.remoteAddress);
       const rl = this.config.rateLimit;
       const now = nowSeconds();
       const windowStart = now - rl.windowSeconds;
+      const tetoIp = rl.maxRequestsPerIp ?? rl.maxRequests * 20;
 
       const dev = req.headers["x-device-id"] || req.body?.deviceId;
-      const chaves = [[`ip:${ip}`, rl.maxRequestsPerIp ?? rl.maxRequests * 20]];
-      if (typeof dev === "string" && dev) chaves.push([`dev:${ip}|${dev.slice(0, 128)}`, rl.maxRequests]);
-      else chaves[0][1] = rl.maxRequests;
+      const auth = req.headers["authorization"];
+      const sub =
+        typeof dev === "string" && dev ? `dev:${dev.slice(0, 128)}`
+        : typeof auth === "string" && auth ? `tok:${auth.slice(-64)}`
+        : null;
+      const compartilhado = this.ipCompartilhado(ip);
+
+      const chaves = [];
+      if (sub) {
+        if (!compartilhado) chaves.push([`ip:${ip}`, tetoIp]);
+        chaves.push([`${ip}|${sub}`, rl.maxRequests]);
+      } else {
+        chaves.push([`ip:${ip}`, compartilhado ? tetoIp : rl.maxRequests]);
+      }
 
       const historicos = chaves.map(([k]) => {
         const h = (this.requests.get(k) || []).filter((ts) => ts > windowStart);
@@ -312,6 +327,10 @@ class BanStore {
     // reaproveitado por muita gente inocente.
     this.ipBloqueiaCriacao = cfg.ipBlocksAccountCreation !== false;
     this.ipJanela = (cfg.ipWindowHours ?? 24) * 3600;
+    // IP com muitas contas diferentes (VPN/booster de jogo, ex. AWS) é tratado
+    // como compartilhado: não entra em ban, limite de criação nem teto de IP.
+    this.ipCompartilhadoMin = cfg.sharedIpMinAccounts ?? 15;
+    this.ipsCompartilhadosFixos = new Set((cfg.sharedIps || []).map(BanStore.normIp).filter(Boolean));
 
     const dataDir = path.join(process.cwd(), "data");
     if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
@@ -333,6 +352,7 @@ class BanStore {
     this.aoDesbanir = null;
 
     this._reindexar();
+    this._indexarContasPorIp();
   }
 
   // Toggle "Ban por IP" do painel (admin-routes /bans/settings).
@@ -445,6 +465,20 @@ class BanStore {
     this._addIdx(this._idx.player, String(ban.playerId), ban.banId);
   }
 
+  _indexarContasPorIp() {
+    this._contasPorIp = new Map(); // ip -> Set(playerId)
+    for (const [playerId, rec] of this.fingerprints) {
+      for (const d of rec.devices || []) this._addIdx(this._contasPorIp, BanStore.normIp(d.ip), playerId);
+    }
+  }
+
+  ipCompartilhado(ip) {
+    const s = BanStore.normIp(ip);
+    if (!s) return false;
+    if (this.ipsCompartilhadosFixos.has(s)) return true;
+    return this.ipCompartilhadoMin > 0 && (this._contasPorIp.get(s)?.size || 0) >= this.ipCompartilhadoMin;
+  }
+
   _bansAtivos(map, chave) {
     const ids = chave ? map.get(chave) : null;
     if (!ids) return [];
@@ -492,6 +526,7 @@ class BanStore {
     }
 
     this.fingerprints.set(key, existing);
+    this._addIdx(this._contasPorIp, ip, key);
     this._saveSoon(this.fingerprintsFile, this.fingerprints);
 
     if (fp.integrityToken) this._guardarTokenRecall(playerId, fp.integrityToken, fp.deviceId);
@@ -545,9 +580,12 @@ class BanStore {
     const agora = nowSeconds();
     const recente = (b) => agora - Math.max(b.createdAt || 0, b.ultimaEvasaoAt || 0) <= this.ipJanela;
     const ipNorm = BanStore.normIp(fp.ip);
-    const porIp = this._bansAtivos(this._idx.ip, ipNorm);
+    const ipCompartilhado = this.ipCompartilhado(ipNorm);
+    const porIp = ipCompartilhado ? [] : this._bansAtivos(this._idx.ip, ipNorm);
 
-    if (porIp.length) {
+    if (ipCompartilhado) {
+      // centenas de inocentes usam esse IP: não serve como sinal
+    } else if (porIp.length) {
       motivos.push("ip_de_banido");
       const r = porIp.find(recente);
       if (criandoConta && this.ipBloqueiaCriacao && r) {
@@ -748,7 +786,7 @@ class BanStore {
     };
     add(ban.deviceIds, fp.deviceId);
     add(ban.hardwareIds, fp.hardwareId);
-    add(ban.ips, BanStore.normIp(fp.ip));
+    if (!this.ipCompartilhado(fp.ip)) add(ban.ips, BanStore.normIp(fp.ip));
 
     ban.ultimaEvasaoAt = nowSeconds();
     if (mudou) this._indexar(ban);
@@ -1900,6 +1938,7 @@ const store = new DataStore(config);
 const authStore = new AuthStore(config, logger);
 const banStore = new BanStore(config, logger);
 const rateLimiter = new RateLimiter(config, logger);
+rateLimiter.ipCompartilhado = (ip) => banStore.ipCompartilhado(ip);
 const app = express();
 const shopStore = new ShopStore(authStore.db, config, logger);
 const googleShop = new GoogleShopStore(authStore.db, config, logger);
@@ -1908,7 +1947,8 @@ const { IntegrityService } = require("./integrity");
 const integrity = new IntegrityService(config, logger);
 
 class LimiteCriacaoConta {
-  constructor(config) {
+  constructor(config, ipCompartilhado = () => false) {
+    this.ipCompartilhado = ipCompartilhado;
     const c = config.accountCreation || {};
     this.janela = (c.windowHours ?? 24) * 3600;
     // IP é compartilhado (CGNAT, Wi-Fi de escola/lan house): teto alto, 0 desliga.
@@ -1922,7 +1962,7 @@ class LimiteCriacaoConta {
   _chaves(fp) {
     const k = [];
     const ip = BanStore.normIp(fp.ip);
-    if (ip && this.maxPorIp > 0) k.push([`ip:${ip}`, this.maxPorIp]);
+    if (ip && this.maxPorIp > 0 && !this.ipCompartilhado(ip)) k.push([`ip:${ip}`, this.maxPorIp]);
     if (fp.hardwareId) k.push([`hw:${fp.hardwareId}`, this.maxPorDispositivo]);
     if (fp.deviceId) k.push([`dev:${fp.deviceId}`, this.maxPorDispositivo]);
     return k;
@@ -1954,7 +1994,7 @@ class LimiteCriacaoConta {
     }
   }
 }
-const limiteCriacao = new LimiteCriacaoConta(config);
+const limiteCriacao = new LimiteCriacaoConta(config, (ip) => banStore.ipCompartilhado(ip));
 
 // Ban => derruba a sessão na hora e marca o(s) aparelho(s) no Google.
 banStore.aoBanir = (ban) => {
