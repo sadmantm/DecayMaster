@@ -246,27 +246,37 @@ class RateLimiter {
     this.requests = new Map();
   }
 
+  // Vários jogadores dividem o mesmo IP (CGNAT): o limite normal vale por
+  // IP+dispositivo, e o IP inteiro só tem um teto bem maior (maxRequestsPerIp).
   middleware() {
     return (req, res, next) => {
       const ip = req.ip || req.connection.remoteAddress;
+      const rl = this.config.rateLimit;
       const now = nowSeconds();
-      const windowStart = now - this.config.rateLimit.windowSeconds;
+      const windowStart = now - rl.windowSeconds;
 
-      let history = this.requests.get(ip) || [];
-      const validRequests = history.filter((ts) => ts > windowStart);
-      this.requests.set(ip, validRequests);
+      const dev = req.headers["x-device-id"] || req.body?.deviceId;
+      const chaves = [[`ip:${ip}`, rl.maxRequestsPerIp ?? rl.maxRequests * 20]];
+      if (typeof dev === "string" && dev) chaves.push([`dev:${ip}|${dev.slice(0, 128)}`, rl.maxRequests]);
+      else chaves[0][1] = rl.maxRequests;
 
-      if (validRequests.length >= this.config.rateLimit.maxRequests) {
-        this.logger.warn(`Rate limit exceeded for IP: ${ip}`);
+      const historicos = chaves.map(([k]) => {
+        const h = (this.requests.get(k) || []).filter((ts) => ts > windowStart);
+        this.requests.set(k, h);
+        return h;
+      });
+
+      const estourou = chaves.findIndex(([, max], i) => historicos[i].length >= max);
+      if (estourou >= 0) {
+        this.logger.warn(`Rate limit exceeded for ${chaves[estourou][0]}`);
         return res.status(429).json({
           ok: false,
           error: "Rate limit exceeded",
-          details: `Max ${this.config.rateLimit.maxRequests} requests per ${this.config.rateLimit.windowSeconds} seconds`,
+          details: `Max ${chaves[estourou][1]} requests per ${rl.windowSeconds} seconds`,
         });
       }
 
-      validRequests.push(now);
-      this.requests.set(ip, validRequests);
+      for (const h of historicos) h.push(now);
       next();
     };
   }
@@ -298,9 +308,10 @@ class BanStore {
     const cfg = config.bans || {};
     this.propagarEvasao = cfg.propagateEvasion !== false;
     // IP NUNCA bloqueia login sozinho (CGNAT). Só bloqueia CRIAÇÃO de conta
-    // vinda do IP de um ban recente.
+    // vinda do IP de um ban recente. Janela curta: o mesmo IP de operadora é
+    // reaproveitado por muita gente inocente.
     this.ipBloqueiaCriacao = cfg.ipBlocksAccountCreation !== false;
-    this.ipJanela = (cfg.ipWindowHours ?? 168) * 3600;
+    this.ipJanela = (cfg.ipWindowHours ?? 24) * 3600;
 
     const dataDir = path.join(process.cwd(), "data");
     if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
@@ -323,6 +334,10 @@ class BanStore {
 
     this._reindexar();
   }
+
+  // Toggle "Ban por IP" do painel (admin-routes /bans/settings).
+  get banByIp() { return this.ipBloqueiaCriacao; }
+  set banByIp(v) { this.ipBloqueiaCriacao = !!v; }
 
   // ===== normalização =====
 
@@ -1207,6 +1222,65 @@ class AuthStore {
       CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
     `);
     this._migrateSkinsTable();
+    this._migrateEmailCase();
+  }
+
+  static normEmail(email) {
+    return typeof email === "string" ? email.trim().toLowerCase() : email;
+  }
+
+  // Email é case-insensitive: grava em minúsculas e busca com NOCASE.
+  // Contas antigas com maiúsculas são normalizadas; se já existem duplicatas
+  // (ex.: "Fulano@x.com" e "fulano@x.com"), ficam como estão e o login tenta
+  // a senha em cada uma (ver _contasPorEmail).
+  _migrateEmailCase() {
+    const linhas = this.db
+      .prepare("SELECT playerId, email FROM accounts WHERE email IS NOT NULL AND email != lower(trim(email))")
+      .all();
+    const ocupado = this.db.prepare("SELECT 1 FROM accounts WHERE email = ? AND playerId != ?");
+    const upd = this.db.prepare("UPDATE accounts SET email = ? WHERE playerId = ?");
+    let normalizados = 0;
+    this.db.transaction(() => {
+      for (const l of linhas) {
+        const novo = AuthStore.normEmail(l.email);
+        if (ocupado.get(novo, l.playerId)) continue;
+        upd.run(novo, l.playerId);
+        normalizados++;
+      }
+    })();
+    if (normalizados) this.logger?.info?.(`[Auth] ${normalizados} email(s) normalizado(s) para minúsculas.`);
+
+    const dups = this.db
+      .prepare(
+        `SELECT lower(email) e, GROUP_CONCAT(playerId) ids FROM accounts
+         WHERE email IS NOT NULL GROUP BY lower(email) HAVING COUNT(*) > 1`,
+      )
+      .all();
+    if (dups.length) {
+      for (const d of dups) this.logger?.warn?.(`[Auth] email duplicado (maiúsc/minúsc): ${d.e} -> contas ${d.ids}`);
+      this.db.exec("CREATE INDEX IF NOT EXISTS idx_accounts_email_nocase ON accounts(email COLLATE NOCASE)");
+    } else {
+      this.db.exec("DROP INDEX IF EXISTS idx_accounts_email_nocase");
+      this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_email_nocase_u ON accounts(email COLLATE NOCASE)");
+    }
+  }
+
+  /** Contas com esse email (ignorando maiúsc/minúsc). Mais de uma só em duplicata legada. */
+  _contasPorEmail(email) {
+    return this.db
+      .prepare(
+        `SELECT playerId, email, passwordHash, playerName FROM accounts
+         WHERE email = ? COLLATE NOCASE ORDER BY createdAt ASC`,
+      )
+      .all(AuthStore.normEmail(email));
+  }
+
+  /** Primeira conta cuja senha confere (resolve duplicatas legadas). */
+  async _contaPorCredenciais(email, password) {
+    for (const a of this._contasPorEmail(email)) {
+      if (a.passwordHash && (await bcrypt.compare(password, a.passwordHash))) return a;
+    }
+    return null;
   }
 
   // Uma linha por (jogador, servidor). Agregado: nada de log por sessão.
@@ -1596,10 +1670,8 @@ _migrateSkinsTable() {
   }
 
   async registerEmail(email, password, deviceId) {
-    const existing = this.db
-      .prepare("SELECT playerId FROM accounts WHERE email = ?")
-      .get(email);
-    if (existing) {
+    email = AuthStore.normEmail(email);
+    if (this.emailExiste(email)) {
       throw { status: 409, message: "Email already registered" };
     }
 
@@ -1627,17 +1699,11 @@ _migrateSkinsTable() {
   }
 
   async loginOrRegisterEmail(email, password, deviceId) {
-    const account = this.db
-      .prepare(
-        `
-      SELECT playerId, passwordHash, playerName FROM accounts WHERE email = ?
-    `,
-      )
-      .get(email);
+    email = AuthStore.normEmail(email);
 
-    if (account) {
-      const valid = await bcrypt.compare(password, account.passwordHash);
-      if (!valid) {
+    if (this.emailExiste(email)) {
+      const account = await this._contaPorCredenciais(email, password);
+      if (!account) {
         throw { status: 401, message: "Senha incorreta" };
       }
 
@@ -1797,7 +1863,16 @@ _migrateSkinsTable() {
   }
 
   emailExiste(email) {
-    return !!this.db.prepare("SELECT 1 FROM accounts WHERE email = ?").get(email);
+    return !!this.db
+      .prepare("SELECT 1 FROM accounts WHERE email = ? COLLATE NOCASE")
+      .get(AuthStore.normEmail(email));
+  }
+
+  /** playerId de outra conta que já usa esse email (ignorando maiúsc/minúsc), ou null. */
+  donoDoEmail(email, excetoPlayerId = null) {
+    return this.db
+      .prepare("SELECT playerId FROM accounts WHERE email = ? COLLATE NOCASE AND playerId IS NOT ?")
+      .get(AuthStore.normEmail(email), excetoPlayerId)?.playerId ?? null;
   }
 
   contaGuestPorDevice(deviceId) {
@@ -1808,11 +1883,7 @@ _migrateSkinsTable() {
 
   /** Confere senha SEM criar sessão. Usado só para descobrir a conta de quem tenta evadir. */
   async verificarCredenciais(email, password) {
-    const a = this.db
-      .prepare("SELECT playerId, passwordHash FROM accounts WHERE email = ?")
-      .get(email);
-    if (!a) return null;
-    return (await bcrypt.compare(password, a.passwordHash)) ? a.playerId : null;
+    return (await this._contaPorCredenciais(email, password))?.playerId ?? null;
   }
 }
 // ===== LOAD CONFIG =====
@@ -1840,7 +1911,9 @@ class LimiteCriacaoConta {
   constructor(config) {
     const c = config.accountCreation || {};
     this.janela = (c.windowHours ?? 24) * 3600;
-    this.maxPorIp = c.maxPerIp ?? 8;
+    // IP é compartilhado (CGNAT, Wi-Fi de escola/lan house): teto alto, 0 desliga.
+    // Quem segura multi-conta de verdade é o limite por dispositivo.
+    this.maxPorIp = c.maxPerIp ?? 30;
     this.maxPorDispositivo = c.maxPerDevice ?? 2;
     this.hist = new Map(); // chave -> [timestamps]
     setInterval(() => this._limpar(), 10 * 60 * 1000).unref();
@@ -1849,7 +1922,7 @@ class LimiteCriacaoConta {
   _chaves(fp) {
     const k = [];
     const ip = BanStore.normIp(fp.ip);
-    if (ip) k.push([`ip:${ip}`, this.maxPorIp]);
+    if (ip && this.maxPorIp > 0) k.push([`ip:${ip}`, this.maxPorIp]);
     if (fp.hardwareId) k.push([`hw:${fp.hardwareId}`, this.maxPorDispositivo]);
     if (fp.deviceId) k.push([`dev:${fp.deviceId}`, this.maxPorDispositivo]);
     return k;
@@ -2442,7 +2515,8 @@ app.post("/auth/integrity/nonce", rateLimiter.middleware(), (req, res) => {
 });
 
 app.post("/auth/email", rateLimiter.middleware(), async (req, res) => {
-  const { email, password, deviceId, clientBuildVersion } = req.body;
+  const { password, deviceId, clientBuildVersion } = req.body;
+  const email = AuthStore.normEmail(req.body.email);
 
   const validation = validateRequired(["email", "password", "deviceId", "clientBuildVersion"], req.body);
   if (validation) return res.status(400).json({ ok: false, error: validation });

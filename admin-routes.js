@@ -1341,7 +1341,7 @@ function registrarRotasAdmin(app, deps) {
     let result;
     if (accountType === "email") {
       if (!email || !password) return bad(res, "email e password são obrigatórios");
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return bad(res, "email inválido");
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return bad(res, "email inválido");
       if (String(password).length < 6) return bad(res, "senha mínima de 6 caracteres");
       result = await authStore.registerEmail(email, password, deviceId || `admin_${crypto.randomBytes(6).toString("hex")}`);
     } else if (accountType === "guest") {
@@ -1385,10 +1385,10 @@ function registrarRotasAdmin(app, deps) {
       }
     }
     if (b.email !== undefined) {
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email)) return bad(res, "email inválido");
-      const dono = db.prepare(`SELECT playerId FROM accounts WHERE email = ?`).get(b.email);
-      if (dono && dono.playerId !== id) return bad(res, "Email já em uso", 409);
-      sets.push("email = ?"); params.push(b.email);
+      const email = typeof b.email === "string" ? b.email.trim().toLowerCase() : "";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return bad(res, "email inválido");
+      if (authStore.donoDoEmail(email, id)) return bad(res, "Email já em uso", 409);
+      sets.push("email = ?"); params.push(email);
     }
     if (b.password !== undefined) {
       if (String(b.password).length < 6) return bad(res, "senha mínima de 6 caracteres");
@@ -1573,6 +1573,7 @@ function registrarRotasAdmin(app, deps) {
       ban.active = b.active;
       if (!b.active) ban.unbannedAt = nowSeconds();
     }
+    banStore._reindexar(); // sem isso, IP/device removido continuava bloqueando até reiniciar
     banStore._save(banStore.bansFile, banStore.bans);
     audit(req, "ban.update", req.params.banId, b);
     res.json({ ok: true, ban });
