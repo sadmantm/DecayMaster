@@ -1261,6 +1261,29 @@ class AuthStore {
     `);
     this._migrateSkinsTable();
     this._migrateEmailCase();
+    this._migrateGlobalAdmin();
+  }
+
+  // Admin global: ganha admin automaticamente em todo servidor que entrar.
+  _migrateGlobalAdmin() {
+    const cols = this.db.prepare(`PRAGMA table_info(accounts)`).all().map((c) => c.name);
+    if (!cols.includes("isGlobalAdmin")) {
+      this.db.exec(`ALTER TABLE accounts ADD COLUMN isGlobalAdmin INTEGER NOT NULL DEFAULT 0`);
+    }
+  }
+
+  isGlobalAdmin(playerId) {
+    const row = this.db.prepare(`SELECT isGlobalAdmin FROM accounts WHERE playerId = ?`).get(playerId);
+    return !!row?.isGlobalAdmin;
+  }
+
+  listGlobalAdminIds() {
+    return this.db.prepare(`SELECT playerId FROM accounts WHERE isGlobalAdmin = 1`).all().map((r) => r.playerId);
+  }
+
+  /** Retorna false se a conta não existe. */
+  setGlobalAdmin(playerId, valor) {
+    return this.db.prepare(`UPDATE accounts SET isGlobalAdmin = ? WHERE playerId = ?`).run(valor ? 1 : 0, playerId).changes > 0;
   }
 
   static normEmail(email) {
@@ -2467,7 +2490,8 @@ app.post("/join/validate", serverAuth, (req, res) => {
   }
 
   authStore.registrarPartidaDiaria?.(result.accountId);
-  logger.info(`[VALIDATE] ✓ ${result.playerName} (${result.accountId}) joined server ${serverId}`);
+  const isGlobalAdmin = authStore.isGlobalAdmin(result.accountId);
+  logger.info(`[VALIDATE] ✓ ${result.playerName} (${result.accountId})${isGlobalAdmin ? " [ADMIN GLOBAL]" : ""} joined server ${serverId}`);
 
   res.json({
     ok: true,
@@ -2475,6 +2499,7 @@ app.post("/join/validate", serverAuth, (req, res) => {
     playerId,
     accountId: result.accountId,
     clientBuildVersion: result.clientBuildVersion,
+    isGlobalAdmin,
   });
 });
 
@@ -2483,7 +2508,9 @@ app.get("/servers/bans/sync", serverAuth, (req, res) => {
   const since = Math.max(0, parseInt(req.query.since, 10) || 0);
   const now = nowSeconds();
   const { banidos, desbanidos } = banStore.mudancasDesde(since);
-  res.json({ ok: true, now, banidos, desbanidos });
+  // Lista completa (é pequena): o servidor aplica concessões e revogações em quem já está online.
+  const adminsGlobais = authStore.listGlobalAdminIds();
+  res.json({ ok: true, now, banidos, desbanidos, adminsGlobais });
 });
 
 // Join token validation

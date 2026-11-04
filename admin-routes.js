@@ -1255,11 +1255,12 @@ function registrarRotasAdmin(app, deps) {
       where.push(`a.accountType = ?`);
       params.push(tipo);
     }
+    if (req.query.admin === "1") where.push(`a.isGlobalAdmin = 1`);
     const w = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
     const rows = db.prepare(
       `SELECT a.playerId, a.playerName, a.email, a.accountType, a.balanceDC, a.balanceDS, a.level, a.xp,
-              a.kills, a.deaths, a.headshots, a.createdAt, a.guestDeviceId,
+              a.kills, a.deaths, a.headshots, a.createdAt, a.guestDeviceId, a.isGlobalAdmin,
               COALESCE(pt.seg, 0) playtimeSeconds, pt.ultima lastPlayedAt
        FROM accounts a
        LEFT JOIN (SELECT playerId, SUM(totalSeconds) seg, MAX(lastPlayedAt) ultima FROM playtime GROUP BY playerId) pt
@@ -1428,6 +1429,18 @@ function registrarRotasAdmin(app, deps) {
     })();
     audit(req, "player.delete", id, acc);
     res.json({ ok: true });
+  }));
+
+  // Admin global: os game servers aplicam no próximo /join/validate e, para quem
+  // já está online, no próximo /servers/bans/sync (~20s).
+  app.post(`${r}/players/:id/global-admin`, adminAuth, wrap((req, res) => {
+    const id = toInt(req.params.id, NaN);
+    if (!Number.isInteger(id)) return bad(res, "playerId inválido");
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== "boolean") return bad(res, "enabled deve ser true ou false");
+    if (!authStore.setGlobalAdmin(id, enabled)) return bad(res, "Conta não encontrada", 404);
+    audit(req, enabled ? "player.globalAdminGrant" : "player.globalAdminRevoke", id);
+    res.json({ ok: true, playerId: id, isGlobalAdmin: enabled });
   }));
 
   app.post(`${r}/players/:id/sessions/revoke`, adminAuth, wrap((req, res) => {

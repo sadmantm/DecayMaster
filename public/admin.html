@@ -470,11 +470,11 @@ VIEWS.overview = async function () {
 /* ═══════════════════════════════ JOGADORES ═══════════════════════════════ */
 VIEWS.players = async function (sub, arg) {
   if (sub && /^\d+$/.test(sub)) return playerDetail(Number(sub), arg || "resumo");
-  const st = { q: sub === "q" ? decodeURIComponent(arg || "") : "", type: "", sort: "createdAt", dir: "desc", offset: 0, limit: 50 };
+  const st = { q: sub === "q" ? decodeURIComponent(arg || "") : "", type: "", admin: "", sort: "createdAt", dir: "desc", offset: 0, limit: 50 };
   async function load() {
-    const r = await api(`/players?q=${encodeURIComponent(st.q)}&type=${st.type}&sort=${st.sort}&dir=${st.dir}&limit=${st.limit}&offset=${st.offset}`);
+    const r = await api(`/players?q=${encodeURIComponent(st.q)}&type=${st.type}&admin=${st.admin}&sort=${st.sort}&dir=${st.dir}&limit=${st.limit}&offset=${st.offset}`);
     $("#plist").innerHTML = table([
-      { h: "Jogador", f: (p) => `<b>${esc(p.playerName || "(sem nome)")}</b> ${p.banned ? '<span class="tag danger">banido</span>' : ""}<br><span class="hint mono">${p.playerId}</span>` },
+      { h: "Jogador", f: (p) => `<b>${esc(p.playerName || "(sem nome)")}</b> ${p.isGlobalAdmin ? '<span class="tag violet">admin global</span>' : ""} ${p.banned ? '<span class="tag danger">banido</span>' : ""}<br><span class="hint mono">${p.playerId}</span>` },
       { h: "Tipo", f: (p) => `<span class="tag">${p.accountType}</span> ${p.email ? `<span class="hint">${esc(p.email)}</span>` : ""}` },
       { h: "Nível", f: (p) => `${p.level} <span class="hint">${p.xp} xp</span>`, num: true },
       { h: "Tempo jogado", f: (p) => p.playtimeSeconds ? `<b>${fmtTempo(p.playtimeSeconds)}</b><br><span class="hint">última ${ago(p.lastPlayedAt)} atrás</span>` : '<span class="hint">nunca</span>', num: true },
@@ -491,10 +491,12 @@ VIEWS.players = async function (sub, arg) {
   <div class="row" style="margin-bottom:12px">
     <input type="text" id="pq" class="sm" style="width:300px" placeholder="id, nick, e-mail ou deviceId" value="${esc(st.q)}">
     <select id="ptype" class="sm"><option value="">Todos os tipos</option><option value="email">E-mail</option><option value="guest">Guest</option></select>
+    <select id="padmin" class="sm"><option value="">Todos os jogadores</option><option value="1">Só admins globais</option></select>
     <select id="psort" class="sm"><option value="createdAt">Mais recentes</option><option value="playtimeSeconds">Mais tempo jogado</option><option value="lastPlayedAt">Jogou por último</option><option value="level">Maior nível</option><option value="kills">Mais kills</option><option value="balanceDC">Mais DC</option><option value="balanceDS">Mais DS</option><option value="playerName">Nome</option></select>
   </div><div id="plist"></div>`);
   $("#pq").oninput = () => { clearTimeout(st.t); st.t = setTimeout(() => { st.q = $("#pq").value.trim(); st.offset = 0; load(); }, 250); };
   $("#ptype").onchange = (e) => { st.type = e.target.value; st.offset = 0; load(); };
+  $("#padmin").onchange = (e) => { st.admin = e.target.value; st.offset = 0; load(); };
   $("#psort").onchange = (e) => { st.sort = e.target.value; st.dir = e.target.value === "playerName" ? "asc" : "desc"; st.offset = 0; load(); };
   ACTIONS.page = (d) => { st.offset = Number(d.offset); load(); };
   ACTIONS.open = (d) => goto(`#/players/${d.id}`);
@@ -601,6 +603,9 @@ async function playerDetail(id, tab = "resumo") {
   if (tab === "acesso") body = `<div class="grid g2">
     <div class="panel"><h2>Sessões ativas</h2>${table([{ h: "Sessão", f: (s) => `<span class="mono">${esc(s.sessionId.slice(0, 8))}…</span>` }, { h: "Device", f: (s) => `<span class="mono">${esc(s.deviceId)}</span>` }, { h: "Criada", f: (s) => fmtDT(s.createdAt) }, { h: "Expira", f: (s) => fmtDT(s.expiresAt) }], d.sessions, { empty: "Nenhuma sessão." })}
       <div class="row" style="margin-top:12px"><button class="btn" data-act="revoke">Encerrar todas as sessões</button></div></div>
+    <div class="panel"><h2>Admin global</h2>
+      <p class="hint" style="margin:0 0 12px">Ativo: o jogador entra como administrador em <b>todos</b> os servidores. Quem já está online recebe ou perde o admin em até ~20s.</p>
+      <div class="row">${a.isGlobalAdmin ? `<span class="tag violet">ativo</span><button class="btn" data-act="gadmin" data-on="0">Remover admin global</button>` : `<span class="tag">inativo</span><button class="btn p" data-act="gadmin" data-on="1">Tornar admin global</button>`}</div></div>
     <div class="panel"><h2>Ações críticas</h2>
       <div class="row" style="margin-bottom:12px">${a.banned ? `<button class="btn" data-act="unban">Remover banimento</button>` : `<button class="btn d" data-act="ban">Banir jogador</button>`}</div>
       <div class="dangerbox">Excluir a conta remove sessões, skins e o registro. Pedidos e ledger ficam guardados como histórico financeiro.</div>
@@ -608,7 +613,7 @@ async function playerDetail(id, tab = "resumo") {
 
   setMain(`
   <div class="top"><div><a href="#/players" class="hint">← Jogadores</a><h1>${esc(a.playerName || "(sem nome)")} <span class="hint mono" style="font-size:16px;font-weight:400">${a.playerId}</span></h1>
-    <p>${a.accountType} · nível ${a.level} · ${fmtN(a.balanceDC)} DC · ${fmtN(a.balanceDS)} DS ${a.banned ? '· <span class="tag danger">BANIDO</span>' : ""}</p></div>
+    <p>${a.accountType} · nível ${a.level} · ${fmtN(a.balanceDC)} DC · ${fmtN(a.balanceDS)} DS ${a.isGlobalAdmin ? '· <span class="tag violet">ADMIN GLOBAL</span>' : ""} ${a.banned ? '· <span class="tag danger">BANIDO</span>' : ""}</p></div>
     <div class="row">${a.banned ? `<button class="btn" data-act="unban">Desbanir</button>` : `<button class="btn d" data-act="ban">Banir</button>`}<button class="btn p" data-act="tab" data-tab="saldo">Ajustar moedas</button></div></div>
   <div class="tabs">${TABS.map(([k, l]) => `<button class="${k === tab ? "on" : ""}" data-act="tab" data-tab="${k}">${l}</button>`).join("")}</div>${body}`);
 
@@ -642,6 +647,13 @@ async function playerDetail(id, tab = "resumo") {
   ACTIONS.revoke = async () => { if (await confirmar("Encerrar sessões", "O jogador precisará fazer login de novo em todos os aparelhos.")) { const r = await api(`/players/${id}/sessions/revoke`, { method: "POST", body: {} }); toast(`${r.removidas} sessão(ões) encerrada(s).`); reload(); } };
   ACTIONS.ban = async () => { const m = await confirmar("Banir jogador", `Bloqueia a conta e todos os ${d.fingerprints.length} dispositivo(s)/IP(s) conhecidos.`, { danger: true, okLabel: "Banir", campo: { label: "Motivo", placeholder: "ex.: cheat, chargeback" } }); if (m !== null) { await api("/bans", { method: "POST", body: { playerId: id, reason: m } }); toast("Jogador banido."); reload(); } };
   ACTIONS.unban = async () => { await api(`/bans/${id}`, { method: "DELETE" }); toast("Banimento removido."); reload(); };
+  ACTIONS.gadmin = async (dd) => {
+    const on = dd.on === "1";
+    if (!(await confirmar(on ? "Tornar admin global" : "Remover admin global", on ? "O jogador terá admin em todos os servidores." : "O jogador perde o admin global em todos os servidores (admin local dado por /adminset continua).", { danger: on, okLabel: on ? "Tornar admin" : "Remover" }))) return;
+    await api(`/players/${id}/global-admin`, { method: "POST", body: { enabled: on } });
+    toast(on ? "Admin global ativado." : "Admin global removido.");
+    reload();
+  };
   ACTIONS.delete = async () => { const v = await confirmar("Excluir conta", `Digite <b>${a.playerId}</b> para confirmar. Esta ação não pode ser desfeita.`, { danger: true, okLabel: "Excluir", campo: { label: "playerId" } }); if (v === String(a.playerId)) { await api(`/players/${id}`, { method: "DELETE" }); toast("Conta excluída."); goto("#/players"); } else if (v !== null) toast("playerId não confere.", "warn"); };
   ACTIONS.adjust = async () => { const delta = +$("#ajDelta").value; if (!delta) return toast("Informe a quantidade.", "warn"); const r = await api("/coins/adjust", { method: "POST", body: { playerId: id, currency: $("#ajCur").value, delta, reason: $("#ajReason").value, allowNegative: $("#ajNeg").checked } }); toast(`Saldo ${r.currency}: ${fmtN(r.balance)}`); reload(); };
   ACTIONS.transfer = async () => { const r = await api("/coins/transfer", { method: "POST", body: { fromPlayerId: id, toPlayerId: +$("#trTo").value, currency: $("#trCur").value, amount: +$("#trAmt").value, reason: $("#trReason").value } }); toast(`Transferido. Saldo agora ${fmtN(r.balances.from)}.`); reload(); };

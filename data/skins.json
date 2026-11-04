@@ -106,6 +106,41 @@
             "slotKey": "weapon:DESERT"
         },
         {
+            "skinId": 2016,
+            "price": 60,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:RIFLE_T4"
+        },
+        {
+            "skinId": 2017,
+            "price": 120,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:RIFLE_T4"
+        },
+        {
+            "skinId": 2018,
+            "price": 80,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:RIFLE_T4"
+        },
+        {
+            "skinId": 2019,
+            "price": 240,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:RIFLE_T4"
+        },
+        {
+            "skinId": 2020,
+            "price": 240,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "weapon:RIFLE_T4"
+        },
+        {
             "skinId": 3001,
             "price": 240,
             "currency": "DC",
@@ -251,6 +286,20 @@
             "currency": "DC",
             "available": true,
             "slotKey": "object:BAUGRANDE"
+        },
+        {
+            "skinId": 3029,
+            "price": 120,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "object:PORTA_DUPLA_NIVEL_3"
+        },
+        {
+            "skinId": 3030,
+            "price": 300,
+            "currency": "DC",
+            "available": true,
+            "slotKey": "object:PORTA_DUPLA_NIVEL_3"
         }
     ]
 }
