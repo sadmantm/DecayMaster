@@ -662,6 +662,7 @@ async function playerDetail(id, tab = "resumo") {
   ACTIONS.revokeplay = async (dd) => { if (await confirmar("Estornar compra Play", "Debita o DC creditado (sem deixar saldo negativo) e marca a compra como anulada.", { danger: true, okLabel: "Estornar" })) { await api(`/orders/play/${encodeURIComponent(dd.token)}/revoke`, { method: "POST", body: {} }); toast("Compra estornada."); reload(); } };
   ACTIONS.edit = () => {
     const box = modal(`<h2>Editar conta ${a.playerId}</h2><div class="grid g2">
+      <div class="f"><label>ID do jogador</label><input type="number" id="eId" value="${a.playerId}" min="1" max="9007199254740991" step="1"><span class="hint">Alterar o ID encerra as sessões ativas.</span></div>
       <div class="f"><label>Nick</label><input type="text" id="eName" value="${esc(a.playerName || "")}"></div>
       ${a.accountType === "email" ? `<div class="f"><label>E-mail</label><input type="email" id="eEmail" value="${esc(a.email || "")}"></div><div class="f"><label>Nova senha (deixe vazio para manter)</label><input type="text" id="ePass"></div>` : "<div></div>"}
       <div class="f"><label>Nível</label><input type="number" id="eLevel" value="${a.level}" min="1"></div><div class="f"><label>XP</label><input type="number" id="eXp" value="${a.xp}" min="0"></div>
@@ -669,10 +670,12 @@ async function playerDetail(id, tab = "resumo") {
       <div class="acts"><button class="btn" data-x>Cancelar</button><button class="btn p" id="eGo">Salvar alterações</button></div>`);
     $("[data-x]", box).onclick = closeModal;
     $("#eGo", box).onclick = async () => {
-      const body = { playerName: $("#eName", box).value.trim(), level: +$("#eLevel", box).value, xp: +$("#eXp", box).value, kills: +$("#eK", box).value, deaths: +$("#eD", box).value, headshots: +$("#eH", box).value };
+      const playerId = Number($("#eId", box).value);
+      if (!Number.isSafeInteger(playerId) || playerId < 1) return toast("Informe um ID inteiro positivo válido.", "warn");
+      const body = { playerId, playerName: $("#eName", box).value.trim(), level: +$("#eLevel", box).value, xp: +$("#eXp", box).value, kills: +$("#eK", box).value, deaths: +$("#eD", box).value, headshots: +$("#eH", box).value };
       if ($("#eEmail", box)) body.email = $("#eEmail", box).value.trim();
       if ($("#ePass", box)?.value) body.password = $("#ePass", box).value;
-      await api(`/players/${id}`, { method: "PATCH", body }); closeModal(); toast("Alterações salvas."); reload();
+      await api(`/players/${id}`, { method: "PATCH", body }); closeModal(); toast("Alterações salvas."); if (playerId !== Number(id)) goto(`#/players/${playerId}`); else reload();
     };
   };
   ACTIONS.rlsave = async (dd) => {
@@ -2860,7 +2863,7 @@ VIEWS.audit = async function () {
     const r = await api(`/audit?action=${encodeURIComponent(st.action)}&target=${encodeURIComponent(st.target)}&limit=${st.limit}&offset=${st.offset}`);
     $("#alist").innerHTML = table([
       { h: "Quando", f: (a) => fmtDT(a.createdAt) }, { h: "Ação", f: (a) => `<span class="tag violet">${esc(a.action)}</span>` },
-      { h: "Alvo", f: (a) => a.target && /^\d{8}$/.test(a.target) ? `<a href="#/players/${a.target}" class="mono">${a.target}</a>` : `<span class="mono">${esc(a.target || "—")}</span>` },
+      { h: "Alvo", f: (a) => a.target && /^\d+$/.test(a.target) ? `<a href="#/players/${a.target}" class="mono">${a.target}</a>` : `<span class="mono">${esc(a.target || "—")}</span>` },
       { h: "Detalhes", f: (a) => `<span class="mono hint" title="${esc(a.details || "")}">${esc((a.details || "").slice(0, 120))}${(a.details || "").length > 120 ? "…" : ""}</span>` }, { h: "IP", f: (a) => `<span class="mono">${esc(a.ip || "")}</span>` },
     ], r.rows, { empty: "Nenhuma ação registrada ainda." }) + pager(r.total, st.limit, st.offset, "page");
     bindActions($("#alist"));

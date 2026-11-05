@@ -1375,6 +1375,20 @@ function registrarRotasAdmin(app, deps) {
     const b = req.body || {};
     const sets = [];
     const params = [];
+    const novoId = b.playerId === undefined ? id : b.playerId;
+    if (!Number.isSafeInteger(novoId) || novoId <= 0) return bad(res, "playerId deve ser um inteiro positivo seguro");
+    const mudouId = novoId !== id;
+    const tabelasId = ["skins", "equipped_skins", "playtime", "dc_orders", "play_orders", "dc_ledger", "roulette_progress", "roulette_spins", "quest_progress", "player_daily_activity", "player_server_daily"];
+    if (mudouId) {
+      if (db.prepare(`SELECT 1 FROM accounts WHERE playerId = ?`).get(novoId) ||
+          tabelasId.some((t) => db.prepare(`SELECT 1 FROM ${t} WHERE playerId = ? LIMIT 1`).get(novoId)) ||
+          banStore.fingerprints.has(String(novoId)) || banStore.recallTokens.has(String(novoId)) ||
+          [...banStore.bans.values()].some((ban) => Number(ban.playerId) === novoId) ||
+          [...pushStore.tokens.values()].some((token) => token.playerId === novoId)) {
+        return bad(res, "ID já utilizado ou associado a dados existentes", 409);
+      }
+      sets.push("playerId = ?"); params.push(novoId);
+    }
     if (b.playerName !== undefined) {
       if (b.playerName === null || b.playerName === "") {
         sets.push("playerName = NULL");
@@ -1403,12 +1417,30 @@ function registrarRotasAdmin(app, deps) {
     }
     if (sets.length === 0) return bad(res, "nada para atualizar");
     params.push(id);
-    db.prepare(`UPDATE accounts SET ${sets.join(", ")} WHERE playerId = ?`).run(...params);
-    if (b.password !== undefined) db.prepare(`DELETE FROM sessions WHERE playerId = ?`).run(id);
+    db.transaction(() => {
+      if (mudouId) {
+        db.pragma("defer_foreign_keys = ON");
+        db.prepare(`DELETE FROM sessions WHERE playerId = ?`).run(id);
+        for (const tabela of tabelasId) db.prepare(`UPDATE ${tabela} SET playerId = ? WHERE playerId = ?`).run(novoId, id);
+      }
+      db.prepare(`UPDATE accounts SET ${sets.join(", ")} WHERE playerId = ?`).run(...params);
+      if (b.password !== undefined) db.prepare(`DELETE FROM sessions WHERE playerId = ?`).run(novoId);
+    })();
+    if (mudouId) {
+      for (const [map, file] of [[banStore.fingerprints, banStore.fingerprintsFile], [banStore.recallTokens, banStore.recallFile]]) {
+        if (map.has(String(id))) { map.set(String(novoId), map.get(String(id))); map.delete(String(id)); banStore._saveSoon(file, map); }
+      }
+      for (const ban of banStore.bans.values()) if (Number(ban.playerId) === id) ban.playerId = novoId;
+      banStore._reindexar(); banStore._indexarContasPorIp();
+      banStore._saveSoon(banStore.bansFile, banStore.bans);
+      for (const token of pushStore.tokens.values()) if (token.playerId === id) { token.playerId = novoId; pushStore._dirty = true; }
+      for (const [key, token] of store.tokens) if (token.accountId === id) store.tokens.delete(key);
+      store._save(store.tokensFile, store.tokens);
+    }
 
     const safe = { ...b }; delete safe.password;
     audit(req, "player.update", id, safe);
-    res.json({ ok: true });
+    res.json({ ok: true, playerId: novoId });
   }));
 
   app.delete(`${r}/players/:id`, adminAuth, wrap((req, res) => {
